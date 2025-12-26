@@ -1,0 +1,16 @@
+# config/profiles.yaml
+
+sensitive:
+  llm: ollama
+  model: mistral
+  anonymize: true
+
+standard:
+  llm: deepseek
+  model: deepseek-chat
+  anonymize: true
+
+fast:
+  llm: gemini
+  model: gemini-flash
+  anonymize: true
