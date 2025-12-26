@@ -6,4 +6,4 @@ __pycache__/
 *.mkv
 *.wav
 .idea/
-.vscode/
+.vscode/data/
