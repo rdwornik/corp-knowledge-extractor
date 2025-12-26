@@ -50,3 +50,4 @@ frames/
 .pytest_cache/
 .coverage
 htmlcov/
+data/input/
