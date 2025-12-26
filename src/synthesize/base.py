@@ -6,34 +6,61 @@ class BaseSynthesizer(ABC):
     
     @abstractmethod
     def synthesize(self, aligned_data: list[dict]) -> dict:
-        """
-        Turn aligned transcript + slides into structured knowledge.
-        
-        Args:
-            aligned_data: List of {"start", "end", "speech", "slide_text"}
-        
-        Returns:
-            {"summary": str, "topics": list, "action_items": list, "key_terms": list}
-        """
         pass
     
     def _build_prompt(self, aligned_data: list[dict]) -> str:
         """Build prompt from aligned data."""
-        content = ""
-        for seg in aligned_data:
-            content += f"[{seg['start']:.1f}s] {seg['speech']}\n"
-            if seg['slide_text']:
-                content += f"  [SLIDE]: {seg['slide_text'][:200]}...\n"
         
-        return f"""Analyze this meeting transcript with slide context.
+        # Group by slide
+        slides = []
+        current_slide = None
+        current_speech = []
+        
+        for seg in aligned_data:
+            if seg['slide_text'] != current_slide:
+                if current_slide is not None:
+                    slides.append({
+                        "slide_text": current_slide,
+                        "speech": " ".join(current_speech)
+                    })
+                current_slide = seg['slide_text']
+                current_speech = [seg['speech']]
+            else:
+                current_speech.append(seg['speech'])
+        
+        if current_slide:
+            slides.append({
+                "slide_text": current_slide,
+                "speech": " ".join(current_speech)
+            })
+        
+        # Build content
+        content = ""
+        for i, slide in enumerate(slides, 1):
+            content += f"SLIDE {i}:\n"
+            content += f"Visual: {slide['slide_text'][:300]}\n"
+            content += f"Speech: {slide['speech']}\n\n"
+        
+        return f"""Analyze this meeting recording with slides.
 
-TRANSCRIPT:
 {content}
 
-Extract:
-1. SUMMARY: 2-3 sentence overview
-2. TOPICS: Main topics discussed (list)
-3. ACTION_ITEMS: Tasks mentioned (list)
-4. KEY_TERMS: Important terminology (list)
+Provide TWO outputs:
 
-Respond in JSON format."""
+1. SLIDE_BREAKDOWN: For each slide:
+   - slide_number
+   - title (infer from content)
+   - visual_content (what's shown)
+   - explanation (what speaker explained)
+   - key_concepts (list of concepts taught)
+
+2. QA_PAIRS: Generate question-answer pairs for knowledge base:
+   - question (specific, factual)
+   - answer (concise, accurate)
+   - source_slide (number)
+
+Respond in JSON format:
+{{
+  "slide_breakdown": [...],
+  "qa_pairs": [...]
+}}"""

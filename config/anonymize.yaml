@@ -1,0 +1,15 @@
+# config/anonymize.yaml
+
+always_mask:
+  - "Blue Yonder"
+  - "Penguin"
+  - "Your Company Name"
+  
+people:
+  - "Mike Geller"
+  - "John Smith"
+
+auto_detect:
+  emails: true
+  phones: true
+  names: true  # Uses NER
