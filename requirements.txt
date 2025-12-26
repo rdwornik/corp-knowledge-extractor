@@ -1,3 +1,4 @@
 openai-whisper
 python-pptx
 speechbrain
+opencv-python
