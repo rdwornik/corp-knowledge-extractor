@@ -6,7 +6,7 @@ from .base import BaseSynthesizer
 class OllamaSynthesizer(BaseSynthesizer):
     """Local LLM via Ollama."""
     
-    def __init__(self, model: str = "llama3.2"):
+    def __init__(self, model: str = "mistral"):
         self.model = model
         self.url = "http://localhost:11434/api/generate"
     
