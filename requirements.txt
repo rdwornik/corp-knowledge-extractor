@@ -1,4 +1,5 @@
 openai-whisper
 python-pptx
-speechbrain
 opencv-python
+pytesseract
+Pillow
