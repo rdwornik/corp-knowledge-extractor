@@ -1,14 +1,17 @@
+import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.transcribe.transcriber import transcribe
 from src.frames.extractor import extract_frames
 from src.ocr.reader import read_frames
 from src.align.aligner import align
 from src.anonymize.anonymizer import anonymize
-from src.synthesize.ollama_backend import OllamaSynthesizer
+from src.synthesize.gemini_backend import GeminiSynthesizer
 from src.output.generator import generate_output
 
 INPUT_DIR = "data/input"
-CUSTOM_TERMS = ["Blue Yonder"]  # Add company names to mask
+CUSTOM_TERMS = ["Blue Yonder"]
 VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi", ".mov")
 
 
@@ -37,8 +40,8 @@ def process_file(file_path: str):
         item['speech'] = anonymize(item['speech'], CUSTOM_TERMS)
         item['slide_text'] = anonymize(item['slide_text'], CUSTOM_TERMS)
 
-    print("Step 6: Synthesizing with Mistral...")
-    synth = OllamaSynthesizer(model='mistral')
+    print("Step 6: Synthesizing with Gemini Flash...")
+    synth = GeminiSynthesizer()
     result = synth.synthesize(aligned)
 
     print("Step 7: Generating output...")

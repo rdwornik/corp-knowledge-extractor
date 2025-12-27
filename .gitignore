@@ -51,3 +51,4 @@ frames/
 .coverage
 htmlcov/
 data/input/
+output/
