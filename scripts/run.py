@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.transcribe.transcriber import transcribe
+from src.transcribe.groq_backend import transcribe_groq  # ZMIANA
 from src.frames.extractor import extract_frames
 from src.ocr.reader import read_frames
 from src.align.aligner import align
@@ -21,8 +21,8 @@ def process_file(file_path: str):
     print(f"Processing: {name}")
     print('='*50)
 
-    print("Step 1: Transcribing...")
-    t = transcribe(file_path)
+    print("Step 1: Transcribing (Groq API)...")
+    t = transcribe_groq(file_path)  # ZMIANA
     print(f"  {len(t)} segments")
 
     print("Step 2: Extracting frames...")
@@ -40,7 +40,7 @@ def process_file(file_path: str):
         item['speech'] = anonymize(item['speech'], CUSTOM_TERMS)
         item['slide_text'] = anonymize(item['slide_text'], CUSTOM_TERMS)
 
-    print("Step 6: Synthesizing with Gemini Flash...")
+    print("Step 6: Synthesizing with Gemini...")
     synth = GeminiSynthesizer()
     result = synth.synthesize(aligned)
 

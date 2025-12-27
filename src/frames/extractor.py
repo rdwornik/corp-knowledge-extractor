@@ -10,15 +10,6 @@ def extract_frames(
 ) -> list[dict]:
     """
     Extract frames when slide changes detected.
-    
-    Args:
-        video_path: Path to video file
-        output_dir: Where to save frames
-        threshold: % of pixels changed to trigger capture (0.05 = 5%)
-        sample_rate: Check every N seconds
-    
-    Returns:
-        List of {"timestamp": float, "path": str}
     """
     os.makedirs(output_dir, exist_ok=True)
     
@@ -56,4 +47,37 @@ def extract_frames(
         frame_count += 1
     
     cap.release()
+    
+    # Deduplicate similar frames
+    saved_frames = _deduplicate_frames(saved_frames)
+    
     return saved_frames
+
+
+def _deduplicate_frames(frames: list[dict], threshold: float = 0.92) -> list[dict]:
+    """Remove frames that are too similar to previous ones."""
+    if len(frames) <= 1:
+        return frames
+    
+    unique = [frames[0]]
+    prev_img = cv2.imread(frames[0]["path"], cv2.IMREAD_GRAYSCALE)
+    
+    for frame in frames[1:]:
+        curr_img = cv2.imread(frame["path"], cv2.IMREAD_GRAYSCALE)
+        
+        # Resize for faster comparison
+        prev_small = cv2.resize(prev_img, (100, 100))
+        curr_small = cv2.resize(curr_img, (100, 100))
+        
+        # Calculate similarity
+        diff = cv2.absdiff(prev_small, curr_small)
+        similarity = 1 - (diff.sum() / (255 * 100 * 100))
+        
+        if similarity < threshold:
+            unique.append(frame)
+            prev_img = curr_img
+        else:
+            # Delete duplicate file
+            os.remove(frame["path"])
+    
+    return unique

@@ -9,18 +9,8 @@ def generate_output(
     frames: list[dict],
     output_dir: str = "output"
 ) -> str:
-    """
-    Generate human + machine outputs.
+    """Generate human + machine outputs."""
     
-    Args:
-        synthesis: {"slide_breakdown": [...], "qa_pairs": [...]}
-        frames: List of {"timestamp": float, "path": str, "text": str}
-        output_dir: Base output directory
-    
-    Returns:
-        Path to created output folder
-    """
-    # Create folder with timestamp
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
     folder = os.path.join(output_dir, timestamp)
     frames_dir = os.path.join(folder, "frames")
@@ -31,7 +21,8 @@ def generate_output(
     for i, frame in enumerate(frames):
         new_name = f"slide_{i+1}.png"
         new_path = os.path.join(frames_dir, new_name)
-        shutil.copy(frame["path"], new_path)
+        if os.path.exists(frame["path"]):
+            shutil.copy(frame["path"], new_path)
         frame_paths.append(new_name)
     
     # Generate markdown
@@ -42,7 +33,7 @@ def generate_output(
     # Generate JSONL
     with open(os.path.join(folder, "knowledge.jsonl"), "w", encoding="utf-8") as f:
         for qa in synthesis.get("qa_pairs", []):
-            f.write(json.dumps(qa) + "\n")
+            f.write(json.dumps(qa, ensure_ascii=False) + "\n")
     
     # Generate metadata
     meta = {
@@ -60,16 +51,46 @@ def _generate_markdown(synthesis: dict, frame_paths: list[str]) -> str:
     """Build markdown report."""
     md = "# Meeting Knowledge Report\n\n"
     
-    for i, slide in enumerate(synthesis.get("slide_breakdown", [])):
-        md += f"## Slide {slide.get('slide_number', i+1)}: {slide.get('title', 'Untitled')}\n\n"
+    breakdowns = synthesis.get("slide_breakdown", [])
+    
+    for slide in breakdowns:
+        slide_num = slide.get('slide_number', 0)
+        title = slide.get('title', 'Untitled')
+        
+        md += f"## Slide {slide_num}: {title}\n\n"
         
         # Embed image if available
-        if i < len(frame_paths):
-            md += f"![Slide {i+1}](frames/{frame_paths[i]})\n\n"
+        if slide_num > 0 and slide_num <= len(frame_paths):
+            md += f"![Slide {slide_num}](frames/{frame_paths[slide_num - 1]})\n\n"
         
-        md += f"**What's shown:** {slide.get('visual_content', 'N/A')}\n\n"
-        md += f"**Explanation:** {slide.get('explanation', 'N/A')}\n\n"
-        md += f"**Key concepts:** {', '.join(slide.get('key_concepts', []))}\n\n"
+        # Visual content
+        visual = slide.get('visual_content', '')
+        if visual:
+            md += f"**What's shown:** {visual}\n\n"
+        
+        # Technical details (NEW)
+        tech = slide.get('technical_details', '')
+        if tech:
+            md += f"**Technical Details:** {tech}\n\n"
+        
+        # Speaker explanation
+        explanation = slide.get('speaker_explanation', slide.get('explanation', ''))
+        if explanation:
+            md += f"**Speaker Explanation:** {explanation}\n\n"
+        
+        # Context & relationships (NEW)
+        context = slide.get('context_relationships', '')
+        if context:
+            md += f"**Context & Relationships:** {context}\n\n"
+        
+        # Key terminology
+        terms = slide.get('key_terminology', [])
+        if terms:
+            if isinstance(terms, list):
+                md += f"**Key Terminology:** {', '.join(str(t) for t in terms)}\n\n"
+            else:
+                md += f"**Key Terminology:** {terms}\n\n"
+        
         md += "---\n\n"
     
     return md
