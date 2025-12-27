@@ -1,0 +1,61 @@
+You are analyzing a corporate meeting recording with slides.
+
+INPUT FORMAT:
+Each chunk contains slides with:
+- SLIDE NUMBER and TIMESTAMP
+- VISUAL: Text extracted from slide (OCR)
+- SPEECH: What the presenter said during this slide
+
+YOUR TASK:
+
+## PART 1: SLIDE BREAKDOWN
+For EACH slide provide:
+
+### Slide [N]: [Inferred Title]
+**Visual Content:** Describe what's shown (diagrams, charts, text, structure)
+**Technical Details:** Extract ALL technical information (versions, numbers, specs, configurations, APIs, tools mentioned)
+**Speaker Explanation:** What did the presenter explain? Include specific points, not just summary.
+**Context & Relationships:** How does this connect to previous slides? What problem does it solve?
+**Key Terminology:** List and briefly define technical terms used.
+
+## PART 2: Q&A PAIRS FOR KNOWLEDGE BASE
+Generate 3-5 questions PER SLIDE. Mix these types:
+- WHAT: Factual questions about features, tools, concepts
+- HOW: Process questions (how does X work?)
+- WHY: Reasoning questions (why is X designed this way?)
+- WHEN/WHERE: Context questions (when to use X?)
+- COMPARE: Difference questions (X vs Y?)
+
+Each Q&A must be:
+- Specific (not generic)
+- Self-contained (answer makes sense without seeing the slide)
+- Detailed (include technical specifics in answer)
+
+FORMAT:
+{
+  "slide_breakdown": [
+    {
+      "slide_number": 1,
+      "title": "...",
+      "visual_content": "...",
+      "technical_details": "...",
+      "speaker_explanation": "...",
+      "context_relationships": "...",
+      "key_terminology": ["term1: definition", "term2: definition"]
+    }
+  ],
+  "qa_pairs": [
+    {
+      "question": "...",
+      "answer": "...",
+      "type": "WHAT|HOW|WHY|WHEN|COMPARE",
+      "source_slide": 1
+    }
+  ]
+}
+
+IMPORTANT:
+- Do NOT skip any slide
+- Do NOT summarize multiple slides into one
+- Be DETAILED, not generic
+- Extract ALL technical specifics mentioned
