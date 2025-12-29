@@ -1,0 +1,209 @@
+# ======================
+# PROCESSING SETTINGS
+# ======================
+
+input:
+  directory: "data/input"
+  video_extensions: [".mp4", ".mkv", ".avi", ".mov"]
+
+# ======================
+# FRAME EXTRACTION
+# ======================
+
+frames:
+  sample_rate: 1  # seconds between frame checks
+  pixel_threshold: 0.05  # minimum change to capture new frame
+  dedup_similarity: 0.85  # threshold for removing duplicates
+  
+  junk_patterns:  # frames to filter out (regex)
+    - "waiting for others"
+    - "joining"
+    - "click to add subtitle"
+    - "microsoft teams"
+    - "mute"
+    - "leave"
+
+# ======================
+# ANONYMIZATION
+# ======================
+
+anonymization:
+  custom_terms:  # company/product names to redact
+    - "Blue Yonder"
+  
+  exclude_terms:  # terms NOT to anonymize (products misidentified as persons)
+    - "WMS"
+    - "BYDM"
+    - "CIG"
+
+# ======================
+# LLM SETTINGS
+# ======================
+
+synthesis:
+  model: "gemini-2.0-flash"
+  chunk_size: 10  # frames per API call
+  
+tagger:
+  batch_size: 10  # frames per tagging call
+
+# ======================
+# ALIGNMENT
+# ======================
+
+alignment:
+  window: 3  # frames to check around timestamp match
+  
+  stop_words:  # words to ignore in similarity matching
+    - "the"
+    - "a"
+    - "an"
+    - "is"
+    - "are"
+    - "was"
+    - "were"
+    - "be"
+    - "been"
+    - "being"
+    - "have"
+    - "has"
+    - "had"
+    - "do"
+    - "does"
+    - "did"
+    - "will"
+    - "would"
+    - "could"
+    - "should"
+    - "may"
+    - "might"
+    - "can"
+    - "to"
+    - "of"
+    - "in"
+    - "for"
+    - "on"
+    - "with"
+    - "at"
+    - "by"
+    - "from"
+    - "or"
+    - "and"
+    - "so"
+    - "but"
+    - "if"
+    - "then"
+    - "that"
+    - "this"
+    - "it"
+    - "we"
+    - "you"
+    - "they"
+    - "i"
+
+# ======================
+# POST-PROCESSING
+# ======================
+
+post_processing:
+  junk_title_patterns:  # slide titles to filter (regex)
+    - "contact\\s+information"
+    - "social\\s+media"
+    - "copyright"
+    - "end\\s+of\\s+presentation"
+    - "thank\\s+you"
+    - "waiting\\s+for\\s+others"
+    - "turn\\s+camera"
+    - "react\\s+view"
+    - "logo\\s+and\\s+copyright"
+  
+  filler_patterns:  # content to skip as non-valuable
+    - "n/a"
+    - "none"
+    - "not applicable"
+    - "identical to"
+    - "same as slide"
+    - "same as previous"
+
+# ======================
+# CATEGORIES
+# ======================
+
+categories:
+  order:
+    - "infrastructure"
+    - "sla"
+    - "api"
+    - "architecture"
+    - "security"
+    - "configuration"
+    - "data"
+    - "updates"
+    - "warehouse"
+    - "general"
+  
+  titles:
+    infrastructure: "🏗️ Infrastructure & Platform"
+    sla: "📋 Service Level Agreements"
+    api: "🔌 APIs & Integration"
+    architecture: "🏛️ Technical Architecture"
+    security: "🔒 Security"
+    configuration: "⚙️ Configuration & Customization"
+    data: "📊 Data & Reporting"
+    updates: "🔄 Updates & Versioning"
+    warehouse: "📦 Warehouse Management"
+    general: "📝 General"
+  
+  keywords:
+    infrastructure:
+      - "saas"
+      - "platform"
+      - "global"
+      - "data center"
+      - "region"
+      - "azure"
+    sla:
+      - "sla"
+      - "availability"
+      - "disaster recovery"
+      - "incident"
+      - "uptime"
+      - "rto"
+    api:
+      - "api"
+      - "integration"
+      - "rest"
+      - "sdk"
+      - "public api"
+    security:
+      - "security"
+      - "iso"
+      - "encryption"
+      - "firewall"
+      - "authentication"
+    architecture:
+      - "architecture"
+      - "technical"
+      - "component"
+      - "microservice"
+    configuration:
+      - "configuration"
+      - "customization"
+      - "extension"
+      - "personalization"
+    updates:
+      - "update"
+      - "upgrade"
+      - "version"
+      - "release"
+      - "deployment"
+    data:
+      - "data"
+      - "reporting"
+      - "snowflake"
+      - "analytics"
+    warehouse:
+      - "warehouse"
+      - "wms"
+      - "inventory"
+      - "fulfillment"
