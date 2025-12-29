@@ -2,6 +2,7 @@ import os
 import json
 import shutil
 from datetime import datetime
+from collections import defaultdict
 
 
 def generate_output(
@@ -16,10 +17,10 @@ def generate_output(
     frames_dir = os.path.join(folder, "frames")
     os.makedirs(frames_dir, exist_ok=True)
     
-    # SORT FRAMES BY TIMESTAMP FIRST (must match synthesizer order!)
+    # Sort frames by timestamp
     frames = sorted(frames, key=lambda x: x.get("timestamp", 0))
     
-    # Copy frames with frame_id naming
+    # Copy frames
     frame_id_to_file = {}
     for i, frame in enumerate(frames):
         frame_id = f"{i+1:03d}"
@@ -50,20 +51,19 @@ def generate_output(
     
     return folder
 
+
 def _generate_markdown(synthesis: dict, frame_id_to_file: dict) -> str:
-    """Build markdown report organized by category."""
+    """Build clean, insight-focused markdown report."""
     md = "# Meeting Knowledge Report\n\n"
     
     breakdowns = synthesis.get("slide_breakdown", [])
     
-    # Group by category
-    from collections import defaultdict
+    # Group by category if present
     by_category = defaultdict(list)
     for slide in breakdowns:
         category = slide.get("category", "general")
         by_category[category].append(slide)
     
-    # Category display order
     category_order = [
         "infrastructure", "sla", "api", "architecture", 
         "security", "configuration", "data", "updates", 
@@ -91,49 +91,84 @@ def _generate_markdown(synthesis: dict, frame_id_to_file: dict) -> str:
         md += f"# {category_titles.get(category, category.title())}\n\n"
         
         for slide in slides:
-            frame_id_raw = slide.get('frame_id', '')
-            if isinstance(frame_id_raw, int):
-                frame_id = f"{frame_id_raw:03d}"
-            else:
-                frame_id = str(frame_id_raw).zfill(3)
-            
-            title = slide.get('title', 'Untitled')
-            
-            md += f"## {title}\n\n"
-            
-            # Note if merged
-            merged_from = slide.get("merged_from", [])
-            if len(merged_from) > 1:
-                md += f"*Combined from frames: {', '.join(str(f) for f in merged_from)}*\n\n"
-            
-            # Match frame by ID
-            if frame_id in frame_id_to_file:
-                filename = frame_id_to_file[frame_id]
-                md += f"![{title}](frames/{filename})\n\n"
-            
-            visual = slide.get('visual_content', '')
-            if visual:
-                md += f"**What's shown:** {visual}\n\n"
-            
-            tech = slide.get('technical_details', '')
-            if tech:
-                md += f"**Technical Details:** {tech}\n\n"
-            
-            explanation = slide.get('speaker_explanation', slide.get('explanation', ''))
-            if explanation:
-                md += f"**Speaker Explanation:** {explanation}\n\n"
-            
-            context = slide.get('context_relationships', '')
-            if context:
-                md += f"**Context & Relationships:** {context}\n\n"
-            
-            terms = slide.get('key_terminology', [])
-            if terms:
-                if isinstance(terms, list):
-                    md += f"**Key Terminology:** {', '.join(str(t) for t in terms)}\n\n"
-                else:
-                    md += f"**Key Terminology:** {terms}\n\n"
-            
-            md += "---\n\n"
+            md += _format_slide(slide, frame_id_to_file)
     
     return md
+
+
+def _format_slide(slide: dict, frame_id_to_file: dict) -> str:
+    """Format a single slide with clean, insight-focused layout."""
+    frame_id_raw = slide.get('frame_id', '')
+    if isinstance(frame_id_raw, int):
+        frame_id = f"{frame_id_raw:03d}"
+    else:
+        frame_id = str(frame_id_raw).zfill(3)
+    
+    title = slide.get('title', 'Untitled')
+    
+    md = f"## {title}\n\n"
+    
+    # Image
+    if frame_id in frame_id_to_file:
+        filename = frame_id_to_file[frame_id]
+        md += f"![{title}](frames/{filename})\n\n"
+    
+    # Key Insight (most important)
+    key_insight = slide.get('key_insight', '')
+    if key_insight and _is_valuable(key_insight):
+        md += f"💡 {key_insight}\n\n"
+    
+    # Context (why it matters)
+    context = slide.get('context', '') or slide.get('context_relationships', '')
+    if context and _is_valuable(context):
+        md += f"{context}\n\n"
+    
+    # Technical notes (only if specific)
+    tech = slide.get('technical_notes', '') or slide.get('technical_details', '')
+    if tech and _is_valuable(tech) and _has_specifics(tech):
+        md += f"**Technical:** {tech}\n\n"
+    
+    # Terminology (only if defined)
+    terms = slide.get('terminology', []) or slide.get('key_terminology', [])
+    if terms and isinstance(terms, list):
+        valid_terms = [t for t in terms if ':' in str(t)]  # Only include definitions
+        if valid_terms:
+            md += f"**Terms:** {', '.join(valid_terms)}\n\n"
+    
+    md += "---\n\n"
+    return md
+
+
+def _is_valuable(text: str) -> bool:
+    """Check if text contains valuable content (not filler)."""
+    if not text:
+        return False
+    
+    text_lower = text.lower()
+    
+    # Skip empty/filler content
+    filler_patterns = [
+        "n/a", "none", "not applicable",
+        "identical to", "same as slide", "same as previous",
+        "the slide shows", "the presenter mentions",
+        "no additional", "nothing new",
+    ]
+    
+    for pattern in filler_patterns:
+        if pattern in text_lower:
+            return False
+    
+    # Must have some substance
+    return len(text.strip()) > 20
+
+
+def _has_specifics(text: str) -> bool:
+    """Check if technical text has specific values (numbers, versions, etc.)."""
+    import re
+    # Look for numbers, percentages, versions, specific terms
+    has_numbers = bool(re.search(r'\d+', text))
+    has_specifics = any(term in text.lower() for term in [
+        '%', 'version', 'api', 'hour', 'minute', 'gb', 'mb', 'tb',
+        'http', 'rest', 'kafka', 'azure', 'aws', 'kubernetes'
+    ])
+    return has_numbers or has_specifics
