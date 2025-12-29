@@ -54,8 +54,32 @@ FORMAT:
   ]
 }
 
+FORMAT:
+{
+  "slide_breakdown": [
+    {
+      "frame_id": "001",
+      "title": "...",
+      "visual_content": "...",
+      "technical_details": "...",
+      "speaker_explanation": "...",
+      "context_relationships": "...",
+      "key_terminology": ["term1: definition", "term2: definition"]
+    }
+  ],
+  "qa_pairs": [
+    {
+      "question": "...",
+      "answer": "...",
+      "type": "WHAT|HOW|WHY|WHEN|COMPARE",
+      "frame_id": "001"
+    }
+  ]
+}
+
 IMPORTANT:
-- Do NOT skip any slide
-- Do NOT summarize multiple slides into one
+- Use the EXACT FRAME_ID from input (e.g., 001, 002, 003). Do NOT renumber.
+- Do NOT skip any frame
+- Do NOT summarize multiple frames into one
 - Be DETAILED, not generic
 - Extract ALL technical specifics mentioned

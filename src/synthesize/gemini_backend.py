@@ -21,22 +21,32 @@ class GeminiSynthesizer(BaseSynthesizer):
         self.model_name = model
         self.chunk_size = chunk_size
     
-    def synthesize(self, aligned_data: list[dict]) -> dict:
-        # Group aligned data by slide
-        slides = self._group_by_slide(aligned_data)
+    def synthesize(self, frames: list[dict], aligned_data: list[dict]) -> dict:
+        """
+        Process frames directly, using aligned_data for speech context.
+        
+        Args:
+            frames: List of {"timestamp": float, "path": str, "text": str, "tags": list}
+            aligned_data: List of {"start": float, "end": float, "speech": str, "slide_text": str}
+        """
+        # Sort frames by timestamp
+        frames = sorted(frames, key=lambda x: x.get("timestamp", 0))
+        
+        # Build speech lookup by timestamp
+        speech_by_time = self._build_speech_lookup(aligned_data)
         
         # Process in chunks
         all_breakdowns = []
         all_qa_pairs = []
         
-        total_chunks = (len(slides) + self.chunk_size - 1) // self.chunk_size
+        total_chunks = (len(frames) + self.chunk_size - 1) // self.chunk_size
         
-        for i in range(0, len(slides), self.chunk_size):
-            chunk = slides[i:i + self.chunk_size]
+        for i in range(0, len(frames), self.chunk_size):
+            chunk = frames[i:i + self.chunk_size]
             chunk_num = (i // self.chunk_size) + 1
-            print(f"    Processing chunk {chunk_num}/{total_chunks} ({len(chunk)} slides)...")
+            print(f"    Processing chunk {chunk_num}/{total_chunks} ({len(chunk)} frames)...")
             
-            result = self._process_chunk(chunk, start_index=i)
+            result = self._process_chunk(chunk, speech_by_time, start_index=i)
             
             if "slide_breakdown" in result:
                 all_breakdowns.extend(result["slide_breakdown"])
@@ -48,45 +58,52 @@ class GeminiSynthesizer(BaseSynthesizer):
             "qa_pairs": all_qa_pairs
         }
     
-    def _group_by_slide(self, aligned_data: list[dict]) -> list[dict]:
-        """Group transcript segments by slide."""
-        slides = []
-        current_slide = None
-        current_speech = []
-        current_timestamp = 0
-        
+    def _build_speech_lookup(self, aligned_data: list[dict]) -> dict:
+        """Build a lookup of speech segments by timestamp ranges."""
+        segments = []
         for seg in aligned_data:
-            if seg['slide_text'] != current_slide:
-                if current_slide is not None:
-                    slides.append({
-                        "slide_text": current_slide,
-                        "speech": " ".join(current_speech),
-                        "timestamp": current_timestamp
-                    })
-                current_slide = seg['slide_text']
-                current_speech = [seg['speech']]
-                current_timestamp = seg['start']
-            else:
-                current_speech.append(seg['speech'])
-        
-        if current_slide:
-            slides.append({
-                "slide_text": current_slide,
-                "speech": " ".join(current_speech),
-                "timestamp": current_timestamp
+            segments.append({
+                "start": seg["start"],
+                "end": seg["end"],
+                "speech": seg["speech"]
             })
-        
-        return slides
+        return segments
     
-    def _process_chunk(self, slides: list[dict], start_index: int = 0) -> dict:
-        """Process a chunk of slides."""
-        # Build content for this chunk
+    def _find_speech_for_frame(self, frame_timestamp: float, speech_segments: list, next_frame_timestamp: float = None) -> str:
+        """Find all speech that occurs while this frame is shown."""
+        speeches = []
+        
+        # Frame is shown from frame_timestamp until next_frame_timestamp (or +60s if last)
+        end_time = next_frame_timestamp if next_frame_timestamp else frame_timestamp + 60
+        
+        for seg in speech_segments:
+            # Speech overlaps with frame display time
+            if seg["start"] < end_time and seg["end"] > frame_timestamp:
+                speeches.append(seg["speech"])
+        
+        return " ".join(speeches)
+    
+    def _process_chunk(self, frames: list[dict], speech_segments: list, start_index: int = 0) -> dict:
+        """Process a chunk of frames."""
         content = ""
-        for i, slide in enumerate(slides):
-            slide_num = start_index + i + 1
-            content += f"=== SLIDE {slide_num} (timestamp: {slide['timestamp']:.1f}s) ===\n"
-            content += f"VISUAL: {slide['slide_text'][:500]}\n"
-            content += f"SPEECH: {slide['speech']}\n\n"
+        
+        for i, frame in enumerate(frames):
+            frame_id = f"{start_index + i + 1:03d}"
+            timestamp = frame.get("timestamp", 0)
+            ocr_text = frame.get("text", "")[:500]
+            tags = frame.get("tags", [])
+            
+            # Find next frame timestamp for speech range
+            next_timestamp = None
+            if i + 1 < len(frames):
+                next_timestamp = frames[i + 1].get("timestamp")
+            
+            speech = self._find_speech_for_frame(timestamp, speech_segments, next_timestamp)
+            
+            content += f"=== FRAME_ID:{frame_id} (timestamp: {timestamp:.1f}s) ===\n"
+            content += f"VISUAL (OCR): {ocr_text}\n"
+            content += f"TAGS: {', '.join(tags)}\n"
+            content += f"SPEECH: {speech}\n\n"
         
         prompt = f"{self.prompt_template}\n\n---\n\nMEETING CONTENT:\n\n{content}"
         

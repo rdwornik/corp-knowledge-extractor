@@ -50,10 +50,11 @@ class BaseSynthesizer(ABC):
                 "timestamp": current_timestamp
             })
         
-        # Build content
+        # Build content with explicit FRAME_ID
         content = ""
-        for i, slide in enumerate(slides, 1):
-            content += f"=== SLIDE {i} (timestamp: {slide['timestamp']:.1f}s) ===\n"
+        for i, slide in enumerate(slides):
+            frame_id = f"{i+1:03d}"
+            content += f"=== FRAME_ID:{frame_id} (timestamp: {slide['timestamp']:.1f}s) ===\n"
             content += f"VISUAL: {slide['slide_text'][:500]}\n"
             content += f"SPEECH: {slide['speech']}\n\n"
         
