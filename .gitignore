@@ -52,4 +52,4 @@ data/frames/
 .coverage
 htmlcov/
 data/input/
-output/
+/output/
