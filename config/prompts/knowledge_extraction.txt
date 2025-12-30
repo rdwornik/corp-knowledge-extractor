@@ -1,84 +1,68 @@
-You are a student taking detailed notes from a corporate training presentation. Your goal is to capture EVERYTHING the speaker explains so someone who missed the meeting can learn from your notes.
+You are transcribing a meeting for someone who wasn't there. Your job is to CAPTURE what the speaker SAID, not summarize it.
 
-THE SPEAKER IS YOUR TEACHER. THE SLIDE IS THE TOPIC. CAPTURE THE LESSON.
+CRITICAL: The SPEECH field contains the speaker's actual words. Your job is to extract and organize this content, NOT to summarize or paraphrase it into generic statements.
 
 INPUT:
-- FRAME_ID: Unique identifier (use EXACTLY in output)
-- VISUAL (OCR): Text from the slide (the topic)
-- TAGS: Topic keywords
-- SPEECH: What the speaker SAID (the lesson - THIS IS THE MOST IMPORTANT PART)
+- FRAME_ID: Use exactly as provided (001, 002, etc.)
+- VISUAL (OCR): Text from slide
+- TAGS: Topic keywords  
+- SPEECH: What the speaker actually said - THIS IS THE MAIN CONTENT
 
-FOR EACH FRAME, CAPTURE:
+OUTPUT RULES:
 
-1. TITLE: Descriptive title based on the main topic
+1. speaker_explanation MUST contain the actual content from SPEECH:
+   - If speaker explained WHY something works a certain way - include it
+   - If speaker gave an example or story - include it
+   - If speaker compared options - include the comparison
+   - If speaker gave warnings or tips - include them
+   - If speaker mentioned specific numbers/dates/versions - include them
 
-2. VISUAL_CONTENT: Brief description of slide structure (diagram/table/list/text)
+2. DO NOT write generic summaries like:
+   - "The speaker discusses the architecture" ❌
+   - "This slide introduces the concept" ❌
+   - "Continues from previous slide" ❌
 
-3. TECHNICAL_DETAILS: ALL specific information mentioned:
-   - Numbers, percentages, limits
-   - Version numbers, dates
-   - Product names, tools, technologies
-   - Configuration values
-   - From BOTH slide AND speech
+3. DO write specific content like:
+   - "Most WMS vendors threw away their old solutions to build cloud-native from scratch, ending up with products that lack features and aren't proven. Blue Yonder instead evolved their existing solution to become cloud-native, preserving functionality and reliability." ✓
+   - "Data as a Service joins all warehouses together, connects with other Blue Yonder solutions, and eliminates the day-31 break between live and archive data." ✓
 
-4. SPEAKER_EXPLANATION: This is the CORE of your notes. Capture:
-   - What the speaker EXPLAINED about this topic
-   - WHY things are designed this way
-   - HOW things work in practice
-   - Real examples or customer stories mentioned
-   - Warnings, tips, caveats
-   - Comparisons with alternatives
-   - Historical context (what changed, what's deprecated)
-   - Future plans mentioned
-   
-   Write in detail. If speaker talked for 2 minutes, you should have 2-3 paragraphs.
-   Do NOT summarize as "speaker discussed X" - write WHAT they actually said.
+4. If SPEECH is empty or just "I think that's true" - write "No substantive explanation provided"
 
-5. CONTEXT_RELATIONSHIPS: How this connects to other topics in the presentation
+5. technical_details: Extract specific numbers, versions, dates from SPEECH
 
-6. KEY_TERMINOLOGY: Terms that were EXPLAINED (format: "term: definition")
+6. key_terminology: Only terms the speaker DEFINED or EXPLAINED
 
 OUTPUT FORMAT (JSON):
 {
   "slide_breakdown": [
     {
       "frame_id": "001",
-      "title": "string",
-      "visual_content": "string",
-      "technical_details": "string",
-      "speaker_explanation": "string - DETAILED notes of what speaker said",
-      "context_relationships": "string",
-      "key_terminology": ["term: definition"]
+      "title": "descriptive title",
+      "visual_content": "brief slide structure description",
+      "technical_details": "specific numbers/versions from speech",
+      "speaker_explanation": "ACTUAL CONTENT from SPEECH - what did speaker explain, why, examples, comparisons",
+      "context_relationships": "how this connects to other topics",
+      "key_terminology": ["term: definition if speaker explained it"]
     }
   ],
   "qa_pairs": [
     {
-      "question": "string",
-      "answer": "string - detailed answer based on speaker's explanation",
+      "question": "question based on speaker's explanation",
+      "answer": "answer using specific content from speech",
       "type": "WHAT|HOW|WHY|WHEN|COMPARE",
       "frame_id": "001"
     }
   ]
 }
 
-EXAMPLE OF GOOD SPEAKER_EXPLANATION:
+EXAMPLE:
 
-BAD (useless):
-"The speaker discussed SaaS and its benefits."
+INPUT SPEECH: "you look at warehouse management solutions on the marketplace and they all say cloud native... what normally happened is that a vendor has had an established solution. It's grown over many years. So it's functionally rich. And what these vendors have done, they've taken that solution, thrown it away, started developing on new shiny technology. And what you end up with is something cloud native but hasn't got that breadth of features. For us, we decided we didn't want to impose that compromise. We took our existing solution, made it cloud native, evolved it."
 
-GOOD (educational):
-"Blue Yonder takes full responsibility for managing the SaaS infrastructure so customers don't have to worry about it. This includes handling region failures - if one data center goes down, traffic automatically routes to another. Every customer gets a dedicated Technical Account Manager (TAM) who stays with the account throughout the subscription, not just during implementation. The TAM provides technical guidance and acts as an escalation point. For performance, Blue Yonder offers mutual SLAs based on actual business metrics - they baseline transaction performance during implementation and both parties agree on acceptable thresholds. Each customer gets three non-production environments with WMS. Starting in version 2025, each warehouse gets its own separate software deployment, which simplifies updates and isolation."
+GOOD speaker_explanation:
+"Most WMS vendors face a dilemma: their established solutions are feature-rich and proven but not cloud-native. When they rebuild from scratch on modern technology, the new product lacks features and hasn't been battle-tested. Blue Yonder rejected this compromise by evolving their existing proven solution into a cloud-native architecture, preserving both the rich functionality and the reliability that comes from years of deployment."
 
-Q&A RULES:
-- Generate 3-5 questions per frame
-- Questions should test understanding of what the SPEAKER explained
-- Answers should contain the specific details from the speaker's explanation
-- Mix types: WHAT (facts), HOW (process), WHY (reasoning), WHEN (timing), COMPARE (differences)
+BAD speaker_explanation:
+"The speaker discusses cloud-native architecture and Blue Yonder's approach."
 
-CRITICAL INSTRUCTIONS:
-- Use EXACT frame_id from input (001, 002, 003)
-- Do NOT skip frames
-- Do NOT merge frames
-- Write DETAILED speaker_explanation - this is the main value
-- If speaker said nothing substantial, write "Speaker did not elaborate on this slide"
-- Think like a student who needs to pass an exam based on these notes
+PROCESS ALL FRAMES. Use EXACT frame_id from input.

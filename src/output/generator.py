@@ -95,49 +95,53 @@ def _generate_markdown(synthesis: dict, frame_id_to_file: dict) -> str:
     
     return md
 
-
 def _format_slide(slide: dict, frame_id_to_file: dict) -> str:
-    """Format a single slide with clean, insight-focused layout."""
+    """Format a single slide."""
     frame_id_raw = slide.get('frame_id', '')
     if isinstance(frame_id_raw, int):
         frame_id = f"{frame_id_raw:03d}"
     else:
         frame_id = str(frame_id_raw).zfill(3)
-    
+
     title = slide.get('title', 'Untitled')
-    
+
     md = f"## {title}\n\n"
-    
+
     # Image
     if frame_id in frame_id_to_file:
         filename = frame_id_to_file[frame_id]
         md += f"![{title}](frames/{filename})\n\n"
-    
-    # Key Insight (most important)
-    key_insight = slide.get('key_insight', '')
-    if key_insight and _is_valuable(key_insight):
-        md += f"💡 {key_insight}\n\n"
-    
-    # Context (why it matters)
-    context = slide.get('context', '') or slide.get('context_relationships', '')
-    if context and _is_valuable(context):
-        md += f"{context}\n\n"
-    
-    # Technical notes (only if specific)
-    tech = slide.get('technical_notes', '') or slide.get('technical_details', '')
-    if tech and _is_valuable(tech) and _has_specifics(tech):
-        md += f"**Technical:** {tech}\n\n"
-    
-    # Terminology (only if defined)
-    terms = slide.get('terminology', []) or slide.get('key_terminology', [])
-    if terms and isinstance(terms, list):
-        valid_terms = [t for t in terms if ':' in str(t)]  # Only include definitions
-        if valid_terms:
-            md += f"**Terms:** {', '.join(valid_terms)}\n\n"
-    
+
+    # Visual content
+    visual = slide.get('visual_content', '')
+    if visual:
+        md += f"**What's shown:** {visual}\n\n"
+
+    # Technical details
+    tech = slide.get('technical_details', '')
+    if tech:
+        md += f"**Technical Details:** {tech}\n\n"
+
+    # Speaker explanation - THE MAIN CONTENT!
+    explanation = slide.get('speaker_explanation', '')
+    if explanation:
+        md += f"**Speaker Explanation:** {explanation}\n\n"
+
+    # Context
+    context = slide.get('context_relationships', '')
+    if context:
+        md += f"**Context & Relationships:** {context}\n\n"
+
+    # Terminology
+    terms = slide.get('key_terminology', [])
+    if terms:
+        if isinstance(terms, list):
+            md += f"**Key Terminology:** {', '.join(str(t) for t in terms)}\n\n"
+        else:
+            md += f"**Key Terminology:** {terms}\n\n"
+
     md += "---\n\n"
     return md
-
 
 def _is_valuable(text: str) -> bool:
     """Check if text contains valuable content (not filler)."""

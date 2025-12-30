@@ -37,12 +37,11 @@ def post_process(synthesis: dict, frames: list[dict]) -> dict:
         "qa_pairs": qa_pairs
     }
 
-
 def _filter_junk_frames(breakdowns: list[dict]) -> list[dict]:
-    """Remove junk frames and low-value entries."""
+    """Remove junk frames."""
     junk_patterns = [
         r"contact\s+information",
-        r"social\s+media",
+        r"social\s+media", 
         r"copyright",
         r"end\s+of\s+presentation",
         r"thank\s+you",
@@ -51,34 +50,29 @@ def _filter_junk_frames(breakdowns: list[dict]) -> list[dict]:
         r"react\s+view",
         r"logo\s+and\s+copyright",
     ]
-    
+
     filtered = []
     for b in breakdowns:
         title = b.get("title", "").lower()
         
-        # Skip junk
         is_junk = any(re.search(pattern, title) for pattern in junk_patterns)
         if is_junk:
             continue
         
-        # Skip if no valuable insight
-        key_insight = b.get("key_insight", "")
-        context = b.get("context", "") or b.get("context_relationships", "")
+        # Check speaker_explanation (not key_insight!)
+        explanation = b.get("speaker_explanation", "")
+        has_content = explanation and len(explanation) > 30
         
-        has_value = (
-            (key_insight and len(key_insight) > 30 and "n/a" not in key_insight.lower()) or
-            (context and len(context) > 30 and "n/a" not in context.lower())
-        )
-        
-        # Keep if has value OR has specific technical details
-        tech = b.get("technical_notes", "") or b.get("technical_details", "")
-        has_tech = tech and re.search(r'\d+', tech)
-        
-        if has_value or has_tech:
+        if has_content:
             filtered.append(b)
-    
-    return filtered
+        else:
+            # Still keep if has technical details
+            tech = b.get("technical_details", "")
+            if tech and len(tech) > 10:
+                filtered.append(b)
 
+    return filtered
+    
 def _deduplicate_frames(breakdowns: list[dict]) -> list[dict]:
     """Merge frames with very similar titles/content."""
     if not breakdowns:
@@ -123,7 +117,11 @@ def _merge_frame_group(group: list[dict]) -> dict:
     for b in group:
         tech = b.get("technical_details", "")
         if tech:
-            all_technical.add(tech)
+            # Handle both string and list
+            if isinstance(tech, list):
+                all_technical.update(str(t) for t in tech)
+            else:
+                all_technical.add(str(tech))
         
         speech = b.get("speaker_explanation", "")
         if speech and speech not in all_speech:
@@ -131,9 +129,9 @@ def _merge_frame_group(group: list[dict]) -> dict:
         
         terms = b.get("key_terminology", [])
         if isinstance(terms, list):
-            all_terms.update(terms)
+            all_terms.update(str(t) for t in terms)
         elif terms:
-            all_terms.add(terms)
+            all_terms.add(str(terms))
     
     # Pick longest/richest version for each field
     base["technical_details"] = max(all_technical, key=len) if all_technical else ""

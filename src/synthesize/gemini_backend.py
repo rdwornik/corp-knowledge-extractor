@@ -86,7 +86,7 @@ class GeminiSynthesizer(BaseSynthesizer):
     def _process_chunk(self, frames: list[dict], speech_segments: list, start_index: int = 0) -> dict:
         """Process a chunk of frames."""
         content = ""
-        
+
         for i, frame in enumerate(frames):
             frame_id = f"{start_index + i + 1:03d}"
             timestamp = frame.get("timestamp", 0)
@@ -105,7 +105,13 @@ class GeminiSynthesizer(BaseSynthesizer):
             content += f"TAGS: {', '.join(tags)}\n"
             content += f"SPEECH: {speech}\n\n"
         
+        print("=" * 50)
+        print(f"SENDING TO LLM (first 2000 chars):")
+        print(content[:2000])
+        print("=" * 50)
+        
         prompt = f"{self.prompt_template}\n\n---\n\nMEETING CONTENT:\n\n{content}"
+
         
         response = self.client.models.generate_content(
             model=self.model_name,
