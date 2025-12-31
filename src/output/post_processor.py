@@ -3,6 +3,33 @@ from collections import defaultdict
 from config.config_loader import get
 
 
+def _clean_speaker_explanation(text: str) -> str:
+    """Clean up raw transcript artifacts into coherent text."""
+    if not text:
+        return text
+
+    # Remove filler patterns
+    filler_patterns = [
+        r'\bSo\.\s*So\.\s*',        # "So. So. "
+        r'\bYes\.\s*Yes\.\s*',      # "Yes. Yes. "
+        r'\bUm\.\s*',               # "Um. "
+        r'\bUh\.\s*',               # "Uh. "
+        r'\s*\|\s*',                # Pipe separators from transcript
+    ]
+
+    for pattern in filler_patterns:
+        text = re.sub(pattern, ' ', text, flags=re.IGNORECASE)
+
+    # Remove "No substantive explanation provided" if it appears
+    text = re.sub(r'No substantive explanation provided\.?', '', text, flags=re.IGNORECASE)
+
+    # Clean up whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Return empty if nothing left
+    return text if text else ""
+
+
 def post_process(synthesis: dict, frames: list[dict]) -> dict:
     """
     Post-process synthesis results to remove duplicates and organize by topic.
@@ -16,7 +43,12 @@ def post_process(synthesis: dict, frames: list[dict]) -> dict:
     """
     breakdowns = synthesis.get("slide_breakdown", [])
     qa_pairs = synthesis.get("qa_pairs", [])
-    
+
+    # Step 0: Clean speaker explanations
+    for b in breakdowns:
+        if "speaker_explanation" in b:
+            b["speaker_explanation"] = _clean_speaker_explanation(b["speaker_explanation"])
+
     # Step 1: Filter junk frames
     breakdowns = _filter_junk_frames(breakdowns)
     
@@ -129,7 +161,11 @@ def _merge_frame_group(group: list[dict]) -> dict:
     
     # Pick longest/richest version for each field
     base["technical_details"] = max(all_technical, key=len) if all_technical else ""
-    base["speaker_explanation"] = " | ".join(all_speech) if all_speech else ""
+
+    # Merge and clean speaker explanations
+    merged_speech = " | ".join(all_speech) if all_speech else ""
+    base["speaker_explanation"] = _clean_speaker_explanation(merged_speech)
+
     base["key_terminology"] = list(all_terms)
     
     # Note which frames were merged

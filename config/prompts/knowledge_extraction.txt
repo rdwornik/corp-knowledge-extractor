@@ -10,27 +10,42 @@ INPUT:
 
 OUTPUT RULES:
 
-1. speaker_explanation MUST contain the actual content from SPEECH:
+1. speaker_explanation MUST SYNTHESIZE content from SPEECH into clear, educational notes:
+   - DO NOT copy transcript verbatim (no "So. So. |" or "Yes. Yes.")
+   - DO NOT include filler words ("So.", "Yes.", "Um.", "Uh.")
+   - DO NOT include incomplete thoughts or sentence fragments
+   - DO NOT include pipe separators (|) from transcript
+   - DO extract: main points, explanations, warnings, tips, comparisons
+   - DO write in clear, complete sentences that flow naturally
+
+   EXAMPLE OF WHAT TO AVOID:
+   BAD: "So. So. | Customers prefer using middleware for..."
+   BAD: "Yes. Yes. It's broadly the same..."
+
+   EXAMPLE OF GOOD SYNTHESIS:
+   GOOD: "Customers typically use middleware for data transformation. REST APIs work best for real-time, low-latency flows, which covers most WMS operations. For larger, less urgent payloads, file transfer is recommended."
+
+2. Content to extract from SPEECH:
    - If speaker explained WHY something works a certain way - include it
    - If speaker gave an example or story - include it
    - If speaker compared options - include the comparison
    - If speaker gave warnings or tips - include them
    - If speaker mentioned specific numbers/dates/versions - include them
 
-2. DO NOT write generic summaries like:
+3. DO NOT write generic summaries like:
    - "The speaker discusses the architecture" ❌
    - "This slide introduces the concept" ❌
    - "Continues from previous slide" ❌
 
-3. DO write specific content like:
+4. DO write specific synthesized content like:
    - "Most WMS vendors threw away their old solutions to build cloud-native from scratch, ending up with products that lack features and aren't proven. Blue Yonder instead evolved their existing solution to become cloud-native, preserving functionality and reliability." ✓
    - "Data as a Service joins all warehouses together, connects with other Blue Yonder solutions, and eliminates the day-31 break between live and archive data." ✓
 
-4. If SPEECH is empty or just "I think that's true" - write "No substantive explanation provided"
+5. If SPEECH is empty or just "I think that's true" - write "No substantive explanation provided"
 
-5. technical_details: Extract specific numbers, versions, dates from SPEECH
+6. technical_details: Extract specific numbers, versions, dates from SPEECH
 
-6. key_terminology: Only terms the speaker DEFINED or EXPLAINED
+7. key_terminology: Only terms the speaker DEFINED or EXPLAINED
 
 OUTPUT FORMAT (JSON):
 {

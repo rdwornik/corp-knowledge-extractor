@@ -38,6 +38,11 @@ slide_junk_patterns:
   - "questions"
   - "q&a"
   - "break"
+  - "^\\[PERSON\\]$"           # Slides with only anonymized person names
+  - "^\\[PERSON\\]\\s+\\w+$"   # Person name with one word after
+  - "^\\[REDACTED\\]$"         # Slides with only redacted text
+  - "^\\[EMAIL\\]$"            # Slides with only email addresses
+  - "^\\[PHONE\\]$"            # Slides with only phone numbers
 
 # ======================
 # FILLER CONTENT PATTERNS
