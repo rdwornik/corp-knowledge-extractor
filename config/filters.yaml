@@ -1,0 +1,143 @@
+# ======================
+# FILTER SETTINGS
+# ======================
+# Patterns and words to filter out during processing
+
+# ======================
+# FRAME JUNK PATTERNS
+# ======================
+
+# Patterns to filter out junk frames (Teams UI, waiting screens, etc.)
+# These are matched against OCR text from frames
+frame_junk_patterns:
+  - "waiting for others"
+  - "joining"
+  - "click to add subtitle"
+  - "microsoft teams"
+  - "mute"
+  - "leave"
+  - "camera"
+  - "microphone"
+
+# ======================
+# SLIDE JUNK PATTERNS
+# ======================
+
+# Slide title patterns to filter out (regex patterns)
+# Used in post-processing to remove non-content slides
+slide_junk_patterns:
+  - "contact\\s+information"
+  - "social\\s+media"
+  - "copyright"
+  - "end\\s+of\\s+presentation"
+  - "thank\\s+you"
+  - "waiting\\s+for\\s+others"
+  - "turn\\s+camera"
+  - "react\\s+view"
+  - "logo\\s+and\\s+copyright"
+  - "questions"
+  - "q&a"
+  - "break"
+
+# ======================
+# FILLER CONTENT PATTERNS
+# ======================
+
+# Patterns indicating filler/non-valuable content
+# Content containing these is considered low-value
+filler_patterns:
+  - "n/a"
+  - "none"
+  - "not applicable"
+  - "identical to"
+  - "same as slide"
+  - "same as previous"
+  - "the slide shows"
+  - "the presenter mentions"
+  - "no additional"
+  - "nothing new"
+
+# ======================
+# STOP WORDS
+# ======================
+
+# Words to ignore in text similarity matching
+# Common English stop words that don't contribute to semantic meaning
+stop_words:
+  - "the"
+  - "a"
+  - "an"
+  - "is"
+  - "are"
+  - "was"
+  - "were"
+  - "be"
+  - "been"
+  - "being"
+  - "have"
+  - "has"
+  - "had"
+  - "do"
+  - "does"
+  - "did"
+  - "will"
+  - "would"
+  - "could"
+  - "should"
+  - "may"
+  - "might"
+  - "can"
+  - "to"
+  - "of"
+  - "in"
+  - "for"
+  - "on"
+  - "with"
+  - "at"
+  - "by"
+  - "from"
+  - "or"
+  - "and"
+  - "so"
+  - "but"
+  - "if"
+  - "then"
+  - "that"
+  - "this"
+  - "it"
+  - "its"
+  - "we"
+  - "you"
+  - "they"
+  - "i"
+  - "he"
+  - "she"
+  - "my"
+  - "your"
+  - "our"
+  - "their"
+
+# ======================
+# SPECIFIC TERMS
+# ======================
+
+# Specific technical terms to look for when checking if content has specifics
+# Used to determine if technical details are substantial
+specific_terms:
+  - "api"
+  - "http"
+  - "rest"
+  - "kafka"
+  - "azure"
+  - "aws"
+  - "kubernetes"
+  - "docker"
+  - "version"
+  - "gb"
+  - "mb"
+  - "tb"
+  - "hour"
+  - "minute"
+  - "second"
+  - "%"
+  - "percent"

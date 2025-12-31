@@ -2,26 +2,32 @@ import os
 import json
 from dotenv import load_dotenv
 from google import genai
+from config.config_loader import get
 
 load_dotenv()
 
 
-def tag_frames(frames: list[dict], batch_size: int = 10) -> list[dict]:
+def tag_frames(frames: list[dict], batch_size: int = None) -> list[dict]:
     """
     Generate semantic tags for each frame using LLM.
-    
+
     Args:
         frames: List of {"timestamp": float, "path": str, "text": str}
         batch_size: How many frames to process at once
-    
+
     Returns:
         Same list with added "tags" field
     """
+    # Load defaults from config
+    if batch_size is None:
+        batch_size = get("processing", "tagger.batch_size", 10)
+
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY not found in .env")
-    
+
     client = genai.Client(api_key=api_key)
+    model_name = get("settings", "llm.tagger_model", "gemini-2.0-flash")
     
     # Process in batches
     for i in range(0, len(frames), batch_size):
@@ -34,7 +40,7 @@ def tag_frames(frames: list[dict], batch_size: int = 10) -> list[dict]:
         prompt = _build_tagging_prompt(batch, start_index=i)
         
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=model_name,
             contents=prompt
         )
         
@@ -49,10 +55,11 @@ def tag_frames(frames: list[dict], batch_size: int = 10) -> list[dict]:
 
 
 def _build_tagging_prompt(batch: list[dict], start_index: int) -> str:
+    ocr_limit = get("settings", "limits.ocr_text_max_chars", 500)
     content = ""
     for j, frame in enumerate(batch):
         frame_num = start_index + j + 1
-        ocr_text = frame.get("text", "")[:500]
+        ocr_text = frame.get("text", "")[:ocr_limit]
         content += f"FRAME {frame_num}:\n{ocr_text}\n\n"
     
     return f"""Analyze these presentation slides and generate semantic tags for each.

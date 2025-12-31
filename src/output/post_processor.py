@@ -1,5 +1,6 @@
 import re
 from collections import defaultdict
+from config.config_loader import get
 
 
 def post_process(synthesis: dict, frames: list[dict]) -> dict:
@@ -39,17 +40,8 @@ def post_process(synthesis: dict, frames: list[dict]) -> dict:
 
 def _filter_junk_frames(breakdowns: list[dict]) -> list[dict]:
     """Remove junk frames."""
-    junk_patterns = [
-        r"contact\s+information",
-        r"social\s+media", 
-        r"copyright",
-        r"end\s+of\s+presentation",
-        r"thank\s+you",
-        r"waiting\s+for\s+others",
-        r"turn\s+camera",
-        r"react\s+view",
-        r"logo\s+and\s+copyright",
-    ]
+    # Load junk patterns from config
+    junk_patterns = get("filters", "slide_junk_patterns", [])
 
     filtered = []
     for b in breakdowns:
@@ -61,14 +53,16 @@ def _filter_junk_frames(breakdowns: list[dict]) -> list[dict]:
         
         # Check speaker_explanation (not key_insight!)
         explanation = b.get("speaker_explanation", "")
-        has_content = explanation and len(explanation) > 30
-        
+        min_exp_length = get("settings", "limits.min_explanation_length", 30)
+        has_content = explanation and len(explanation) > min_exp_length
+
         if has_content:
             filtered.append(b)
         else:
             # Still keep if has technical details
             tech = b.get("technical_details", "")
-            if tech and len(tech) > 10:
+            min_tech_length = get("settings", "limits.min_technical_details_length", 10)
+            if tech and len(tech) > min_tech_length:
                 filtered.append(b)
 
     return filtered
@@ -147,17 +141,8 @@ def _merge_frame_group(group: list[dict]) -> dict:
 
 def _categorize_by_topic(breakdowns: list[dict]) -> list[dict]:
     """Add category field based on content analysis."""
-    categories = {
-        "infrastructure": ["saas", "platform", "global", "data center", "region", "azure"],
-        "sla": ["sla", "availability", "disaster recovery", "incident", "uptime", "rto"],
-        "api": ["api", "integration", "rest", "sdk", "public api"],
-        "security": ["security", "iso", "encryption", "firewall", "authentication"],
-        "architecture": ["architecture", "technical", "component", "microservice"],
-        "configuration": ["configuration", "customization", "extension", "personalization"],
-        "updates": ["update", "upgrade", "version", "release", "deployment"],
-        "data": ["data", "reporting", "snowflake", "analytics"],
-        "warehouse": ["warehouse", "wms", "inventory", "fulfillment"],
-    }
+    # Load categories from config
+    categories = get("categories", "keywords", {})
     
     for b in breakdowns:
         title = b.get("title", "").lower()

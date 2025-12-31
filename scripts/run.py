@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from config.config_loader import get, get_path
 from src.transcribe.groq_backend import transcribe_groq
 from src.frames.extractor import extract_frames
 from src.ocr.reader import read_frames
@@ -12,9 +13,10 @@ from src.synthesize.gemini_backend import GeminiSynthesizer
 from src.output.post_processor import post_process
 from src.output.generator import generate_output
 
-INPUT_DIR = "data/input"
-CUSTOM_TERMS = ["Blue Yonder"]
-VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi", ".mov")
+# Load configuration
+INPUT_DIR = get_path("settings", "input.directory")
+CUSTOM_TERMS = get("anonymize", "custom_terms", [])
+VIDEO_EXTENSIONS = tuple(get("settings", "input.video_extensions", [".mp4", ".mkv", ".avi", ".mov"]))
 
 
 def process_file(file_path: str):

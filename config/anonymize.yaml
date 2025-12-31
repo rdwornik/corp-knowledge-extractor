@@ -1,15 +1,23 @@
-# config/anonymize.yaml
+# ======================
+# ANONYMIZATION SETTINGS
+# ======================
 
-always_mask:
+# Terms to redact (company names, project names, sensitive terms)
+custom_terms:
   - "Blue Yonder"
   - "Penguin"
   - "Your Company Name"
-  
-people:
-  - "Mike Geller"
-  - "John Smith"
 
+# Terms NOT to anonymize (products/terms that NER might misidentify as persons)
+# These are excluded from auto-detection
+exclude_terms:
+  - "WMS"
+  - "BYDM"
+  - "CIG"
+  - "Warehouse Management System"
+
+# Auto-detection settings
 auto_detect:
-  emails: true
-  phones: true
-  names: true  # Uses NER
+  emails: true       # Mask email addresses
+  phones: true       # Mask phone numbers
+  names: true        # Use NER to detect person names

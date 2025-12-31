@@ -1,38 +1,49 @@
+from config.config_loader import get
+
+
 def align(transcript: list[dict], frames: list[dict]) -> list[dict]:
     """
     Match transcript segments with visible slides using timestamp + semantic tags.
     """
     aligned = []
-    
+
     for seg in transcript:
         best_frame = _find_best_frame(seg, frames)
-        
+
         aligned.append({
             "start": seg["start"],
             "end": seg["end"],
             "speech": seg["text"],
             "slide_text": best_frame
         })
-    
+
     return aligned
 
 
-def _find_best_frame(segment: dict, frames: list[dict], window: int = 3) -> str:
+def _find_best_frame(segment: dict, frames: list[dict], window: int = None) -> str:
     """Find best matching frame using timestamp + semantic tags."""
     if not frames:
         return ""
-    
+
+    # Load config values
+    if window is None:
+        window = get("processing", "alignment.window", 3)
+    tolerance_before = get("processing", "alignment.timestamp_tolerance_before", 5)
+    tolerance_after = get("processing", "alignment.timestamp_tolerance_after", 10)
+    weights = get("processing", "alignment.weights", {"tags": 0.5, "text": 0.3, "timestamp": 0.2})
+    timestamp_divisor = get("processing", "alignment.timestamp_score_divisor", 10)
+
     seg_start = segment["start"]
     seg_end = segment["end"]
     speech = segment["text"].lower()
     speech_words = set(speech.split())
-    
+
     # Find frame with closest timestamp
     closest_idx = 0
     min_diff = float('inf')
-    
+
     for i, frame in enumerate(frames):
-        if frame["timestamp"] <= seg_start + 5:
+        if frame["timestamp"] <= seg_start + tolerance_before:
             diff = abs(frame["timestamp"] - seg_start)
             if diff < min_diff:
                 min_diff = diff
@@ -42,21 +53,25 @@ def _find_best_frame(segment: dict, frames: list[dict], window: int = 3) -> str:
     candidates = []
     for i in range(max(0, closest_idx - window), min(len(frames), closest_idx + window + 1)):
         frame = frames[i]
-        
-        if frame["timestamp"] <= seg_end + 10:
+
+        if frame["timestamp"] <= seg_end + tolerance_after:
             # Tag-based similarity
             tags = frame.get("tags", [])
             tag_score = _tag_similarity(speech_words, tags)
-            
+
             # OCR text similarity (fallback)
             text_score = _text_similarity(speech, frame.get("text", "").lower())
-            
+
             # Timestamp proximity
-            timestamp_score = 1.0 / (1.0 + abs(frame["timestamp"] - seg_start) / 10)
-            
-            # Combined: 50% tags, 30% text, 20% timestamp
-            combined_score = 0.5 * tag_score + 0.3 * text_score + 0.2 * timestamp_score
-            
+            timestamp_score = 1.0 / (1.0 + abs(frame["timestamp"] - seg_start) / timestamp_divisor)
+
+            # Combined score using weights from config
+            combined_score = (
+                weights["tags"] * tag_score +
+                weights["text"] * text_score +
+                weights["timestamp"] * timestamp_score
+            )
+
             candidates.append((frame, combined_score))
     
     if not candidates:
@@ -82,13 +97,9 @@ def _tag_similarity(speech_words: set, tags: list[str]) -> float:
 
 def _text_similarity(text1: str, text2: str) -> float:
     """Calculate word overlap similarity."""
-    stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 
-                  'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
-                  'would', 'could', 'should', 'may', 'might', 'can', 'to', 'of',
-                  'in', 'for', 'on', 'with', 'at', 'by', 'from', 'or', 'and',
-                  'so', 'but', 'if', 'then', 'that', 'this', 'it', 'its', 'we',
-                  'you', 'they', 'i', 'he', 'she', 'my', 'your', 'our', 'their'}
-    
+    stop_words_list = get("filters", "stop_words", [])
+    stop_words = set(stop_words_list)
+
     words1 = set(w for w in text1.split() if len(w) > 2 and w not in stop_words)
     words2 = set(w for w in text2.split() if len(w) > 2 and w not in stop_words)
     

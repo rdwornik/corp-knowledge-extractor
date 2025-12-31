@@ -1,0 +1,103 @@
+# ======================
+# CATEGORY SETTINGS
+# ======================
+# Configuration for automatic content categorization
+
+# Display order for categories in reports
+order:
+  - "infrastructure"
+  - "sla"
+  - "api"
+  - "architecture"
+  - "security"
+  - "configuration"
+  - "data"
+  - "updates"
+  - "warehouse"
+  - "general"
+
+# Display titles for each category (used in markdown reports)
+titles:
+  infrastructure: "🏗️ Infrastructure & Platform"
+  sla: "📋 Service Level Agreements"
+  api: "🔌 APIs & Integration"
+  architecture: "🏛️ Technical Architecture"
+  security: "🔒 Security"
+  configuration: "⚙️ Configuration & Customization"
+  data: "📊 Data & Reporting"
+  updates: "🔄 Updates & Versioning"
+  warehouse: "📦 Warehouse Management"
+  general: "📝 General"
+
+# Keywords for automatic categorization
+# Content is matched against these keywords to determine category
+keywords:
+  infrastructure:
+    - "saas"
+    - "platform"
+    - "global"
+    - "data center"
+    - "region"
+    - "azure"
+    - "cloud"
+
+  sla:
+    - "sla"
+    - "availability"
+    - "disaster recovery"
+    - "incident"
+    - "uptime"
+    - "rto"
+    - "rpo"
+
+  api:
+    - "api"
+    - "integration"
+    - "rest"
+    - "sdk"
+    - "public api"
+    - "endpoint"
+
+  security:
+    - "security"
+    - "iso"
+    - "encryption"
+    - "firewall"
+    - "authentication"
+    - "authorization"
+
+  architecture:
+    - "architecture"
+    - "technical"
+    - "component"
+    - "microservice"
+    - "design"
+
+  configuration:
+    - "configuration"
+    - "customization"
+    - "extension"
+    - "personalization"
+    - "settings"
+
+  updates:
+    - "update"
+    - "upgrade"
+    - "version"
+    - "release"
+    - "deployment"
+    - "migration"
+
+  data:
+    - "data"
+    - "reporting"
+    - "snowflake"
+    - "analytics"
+    - "database"
+
+  warehouse:
+    - "warehouse"
+    - "wms"
+    - "inventory"
+    - "fulfillment"
+    - "logistics"

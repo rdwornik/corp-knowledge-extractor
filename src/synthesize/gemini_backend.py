@@ -3,20 +3,27 @@ import json
 from dotenv import load_dotenv
 from google import genai
 from .base import BaseSynthesizer
+from config.config_loader import get
 
 load_dotenv()
 
 
 class GeminiSynthesizer(BaseSynthesizer):
     """Google Gemini API backend with chunk processing."""
-    
-    def __init__(self, model: str = "gemini-2.0-flash", chunk_size: int = 10):
+
+    def __init__(self, model: str = None, chunk_size: int = None):
         super().__init__()
-        
+
+        # Load defaults from config
+        if model is None:
+            model = get("settings", "llm.model", "gemini-2.0-flash")
+        if chunk_size is None:
+            chunk_size = get("processing", "synthesis.chunk_size", 10)
+
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY not found in .env")
-        
+
         self.client = genai.Client(api_key=api_key)
         self.model_name = model
         self.chunk_size = chunk_size
@@ -72,9 +79,10 @@ class GeminiSynthesizer(BaseSynthesizer):
     def _find_speech_for_frame(self, frame_timestamp: float, speech_segments: list, next_frame_timestamp: float = None) -> str:
         """Find all speech that occurs while this frame is shown."""
         speeches = []
-        
-        # Frame is shown from frame_timestamp until next_frame_timestamp (or +60s if last)
-        end_time = next_frame_timestamp if next_frame_timestamp else frame_timestamp + 60
+
+        # Frame is shown from frame_timestamp until next_frame_timestamp (or +default if last)
+        default_range = get("settings", "limits.speech_range_last_frame", 60)
+        end_time = next_frame_timestamp if next_frame_timestamp else frame_timestamp + default_range
         
         for seg in speech_segments:
             # Speech overlaps with frame display time
@@ -85,12 +93,13 @@ class GeminiSynthesizer(BaseSynthesizer):
     
     def _process_chunk(self, frames: list[dict], speech_segments: list, start_index: int = 0) -> dict:
         """Process a chunk of frames."""
+        ocr_limit = get("settings", "limits.ocr_text_max_chars", 500)
         content = ""
 
         for i, frame in enumerate(frames):
             frame_id = f"{start_index + i + 1:03d}"
             timestamp = frame.get("timestamp", 0)
-            ocr_text = frame.get("text", "")[:500]
+            ocr_text = frame.get("text", "")[:ocr_limit]
             tags = frame.get("tags", [])
             
             # Find next frame timestamp for speech range

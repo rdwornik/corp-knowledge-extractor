@@ -3,15 +3,20 @@ import json
 import shutil
 from datetime import datetime
 from collections import defaultdict
+from config.config_loader import get, get_path
 
 
 def generate_output(
     synthesis: dict,
     frames: list[dict],
-    output_dir: str = "output"
+    output_dir: str = None
 ) -> str:
     """Generate human + machine outputs."""
-    
+
+    # Load defaults from config
+    if output_dir is None:
+        output_dir = get_path("settings", "output.directory")
+
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
     folder = os.path.join(output_dir, timestamp)
     frames_dir = os.path.join(folder, "frames")
@@ -58,30 +63,15 @@ def _generate_markdown(synthesis: dict, frame_id_to_file: dict) -> str:
     
     breakdowns = synthesis.get("slide_breakdown", [])
     
+    # Load categories from config
+    category_order = get("categories", "order", ["general"])
+    category_titles = get("categories", "titles", {})
+
     # Group by category if present
     by_category = defaultdict(list)
     for slide in breakdowns:
         category = slide.get("category", "general")
         by_category[category].append(slide)
-    
-    category_order = [
-        "infrastructure", "sla", "api", "architecture", 
-        "security", "configuration", "data", "updates", 
-        "warehouse", "general"
-    ]
-    
-    category_titles = {
-        "infrastructure": "🏗️ Infrastructure & Platform",
-        "sla": "📋 Service Level Agreements",
-        "api": "🔌 APIs & Integration",
-        "architecture": "🏛️ Technical Architecture",
-        "security": "🔒 Security",
-        "configuration": "⚙️ Configuration & Customization",
-        "data": "📊 Data & Reporting",
-        "updates": "🔄 Updates & Versioning",
-        "warehouse": "📦 Warehouse Management",
-        "general": "📝 General",
-    }
     
     for category in category_order:
         slides = by_category.get(category, [])
@@ -147,32 +137,30 @@ def _is_valuable(text: str) -> bool:
     """Check if text contains valuable content (not filler)."""
     if not text:
         return False
-    
+
     text_lower = text.lower()
-    
-    # Skip empty/filler content
-    filler_patterns = [
-        "n/a", "none", "not applicable",
-        "identical to", "same as slide", "same as previous",
-        "the slide shows", "the presenter mentions",
-        "no additional", "nothing new",
-    ]
-    
+
+    # Load filler patterns from config
+    filler_patterns = get("filters", "filler_patterns", [])
+
     for pattern in filler_patterns:
         if pattern in text_lower:
             return False
-    
+
     # Must have some substance
-    return len(text.strip()) > 20
+    min_length = get("settings", "limits.min_valuable_text_length", 20)
+    return len(text.strip()) > min_length
 
 
 def _has_specifics(text: str) -> bool:
     """Check if technical text has specific values (numbers, versions, etc.)."""
     import re
+
     # Look for numbers, percentages, versions, specific terms
     has_numbers = bool(re.search(r'\d+', text))
-    has_specifics = any(term in text.lower() for term in [
-        '%', 'version', 'api', 'hour', 'minute', 'gb', 'mb', 'tb',
-        'http', 'rest', 'kafka', 'azure', 'aws', 'kubernetes'
-    ])
+
+    # Load specific terms from config
+    specific_terms = get("filters", "specific_terms", [])
+    has_specifics = any(term in text.lower() for term in specific_terms)
+
     return has_numbers or has_specifics

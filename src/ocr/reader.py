@@ -1,7 +1,10 @@
 import pytesseract
 from PIL import Image
+from config.config_loader import get
 
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# Load tesseract path from config
+tesseract_path = get("settings", "tools.tesseract_path")
+pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 
 def read_frame(image_path: str) -> str:

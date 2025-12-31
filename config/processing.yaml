@@ -1,0 +1,74 @@
+# ======================
+# PROCESSING SETTINGS
+# ======================
+# Configuration for frame extraction, OCR, alignment, and LLM processing
+
+# ======================
+# FRAME EXTRACTION
+# ======================
+
+frames:
+  # Seconds between frame checks (higher = less frames, faster processing)
+  sample_rate: 1
+
+  # Minimum pixel change ratio to capture a new frame (0.0 - 1.0)
+  # Lower = more sensitive to changes, more frames captured
+  pixel_threshold: 0.05
+
+  # Pixel difference threshold for change detection (0-255)
+  # Values above this threshold are considered changed
+  pixel_diff_threshold: 25
+
+  # Output directory for extracted frames
+  output_dir: "data/frames"
+
+# ======================
+# FRAME DEDUPLICATION
+# ======================
+
+deduplication:
+  # Similarity threshold for removing duplicate frames (0.0 - 1.0)
+  # Higher = more strict, keeps more frames
+  pixel_similarity: 0.85
+
+  # Text similarity threshold for OCR-based deduplication (0.0 - 1.0)
+  text_similarity: 0.90
+
+  # Frame resize dimensions for similarity comparison (width, height)
+  # Smaller = faster comparison, less precise
+  comparison_size: [100, 100]
+
+# ======================
+# ALIGNMENT
+# ======================
+
+alignment:
+  # Number of frames to check around closest timestamp match
+  # Higher = more thorough, slower processing
+  window: 3
+
+  # Timestamp tolerance offsets (seconds)
+  timestamp_tolerance_before: 5   # How far before to look
+  timestamp_tolerance_after: 10   # How far after to look
+
+  # Score weights for frame matching (must sum to 1.0)
+  weights:
+    tags: 0.5         # Weight for semantic tag matching
+    text: 0.3         # Weight for OCR text matching
+    timestamp: 0.2    # Weight for timestamp proximity
+
+  # Timestamp score calculation divisor
+  timestamp_score_divisor: 10
+
+# ======================
+# LLM PROCESSING
+# ======================
+
+synthesis:
+  # Number of frames to process per API call
+  # Higher = fewer API calls but larger context
+  chunk_size: 10
+
+tagger:
+  # Number of frames to tag per API call
+  batch_size: 10

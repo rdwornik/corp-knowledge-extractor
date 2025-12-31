@@ -1,209 +1,50 @@
 # ======================
-# PROCESSING SETTINGS
+# GENERAL SETTINGS
 # ======================
 
+# Input paths and file extensions
 input:
   directory: "data/input"
   video_extensions: [".mp4", ".mkv", ".avi", ".mov"]
 
-# ======================
-# FRAME EXTRACTION
-# ======================
+# Output directory
+output:
+  directory: "output"
 
-frames:
-  sample_rate: 1  # seconds between frame checks
-  pixel_threshold: 0.05  # minimum change to capture new frame
-  dedup_similarity: 0.85  # threshold for removing duplicates
-  
-  junk_patterns:  # frames to filter out (regex)
-    - "waiting for others"
-    - "joining"
-    - "click to add subtitle"
-    - "microsoft teams"
-    - "mute"
-    - "leave"
-
-# ======================
-# ANONYMIZATION
-# ======================
-
-anonymization:
-  custom_terms:  # company/product names to redact
-    - "Blue Yonder"
-  
-  exclude_terms:  # terms NOT to anonymize (products misidentified as persons)
-    - "WMS"
-    - "BYDM"
-    - "CIG"
+# Paths to external tools
+tools:
+  tesseract_path: "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
 
 # ======================
 # LLM SETTINGS
 # ======================
 
-synthesis:
+llm:
+  # Primary model for synthesis
   model: "gemini-2.0-flash"
-  chunk_size: 10  # frames per API call
-  
-tagger:
-  batch_size: 10  # frames per tagging call
+
+  # Tagger model (can be different from synthesis model)
+  tagger_model: "gemini-2.0-flash"
+
+  # Whisper model for transcription
+  whisper_model: "medium"
 
 # ======================
-# ALIGNMENT
+# CONTENT LIMITS
 # ======================
 
-alignment:
-  window: 3  # frames to check around timestamp match
-  
-  stop_words:  # words to ignore in similarity matching
-    - "the"
-    - "a"
-    - "an"
-    - "is"
-    - "are"
-    - "was"
-    - "were"
-    - "be"
-    - "been"
-    - "being"
-    - "have"
-    - "has"
-    - "had"
-    - "do"
-    - "does"
-    - "did"
-    - "will"
-    - "would"
-    - "could"
-    - "should"
-    - "may"
-    - "might"
-    - "can"
-    - "to"
-    - "of"
-    - "in"
-    - "for"
-    - "on"
-    - "with"
-    - "at"
-    - "by"
-    - "from"
-    - "or"
-    - "and"
-    - "so"
-    - "but"
-    - "if"
-    - "then"
-    - "that"
-    - "this"
-    - "it"
-    - "we"
-    - "you"
-    - "they"
-    - "i"
+limits:
+  # Maximum OCR text length per frame sent to LLM
+  ocr_text_max_chars: 500
 
-# ======================
-# POST-PROCESSING
-# ======================
+  # Default speech range for last frame (seconds)
+  speech_range_last_frame: 60
 
-post_processing:
-  junk_title_patterns:  # slide titles to filter (regex)
-    - "contact\\s+information"
-    - "social\\s+media"
-    - "copyright"
-    - "end\\s+of\\s+presentation"
-    - "thank\\s+you"
-    - "waiting\\s+for\\s+others"
-    - "turn\\s+camera"
-    - "react\\s+view"
-    - "logo\\s+and\\s+copyright"
-  
-  filler_patterns:  # content to skip as non-valuable
-    - "n/a"
-    - "none"
-    - "not applicable"
-    - "identical to"
-    - "same as slide"
-    - "same as previous"
+  # Minimum text length to be considered valuable
+  min_valuable_text_length: 20
 
-# ======================
-# CATEGORIES
-# ======================
+  # Minimum explanation length for post-processing
+  min_explanation_length: 30
 
-categories:
-  order:
-    - "infrastructure"
-    - "sla"
-    - "api"
-    - "architecture"
-    - "security"
-    - "configuration"
-    - "data"
-    - "updates"
-    - "warehouse"
-    - "general"
-  
-  titles:
-    infrastructure: "🏗️ Infrastructure & Platform"
-    sla: "📋 Service Level Agreements"
-    api: "🔌 APIs & Integration"
-    architecture: "🏛️ Technical Architecture"
-    security: "🔒 Security"
-    configuration: "⚙️ Configuration & Customization"
-    data: "📊 Data & Reporting"
-    updates: "🔄 Updates & Versioning"
-    warehouse: "📦 Warehouse Management"
-    general: "📝 General"
-  
-  keywords:
-    infrastructure:
-      - "saas"
-      - "platform"
-      - "global"
-      - "data center"
-      - "region"
-      - "azure"
-    sla:
-      - "sla"
-      - "availability"
-      - "disaster recovery"
-      - "incident"
-      - "uptime"
-      - "rto"
-    api:
-      - "api"
-      - "integration"
-      - "rest"
-      - "sdk"
-      - "public api"
-    security:
-      - "security"
-      - "iso"
-      - "encryption"
-      - "firewall"
-      - "authentication"
-    architecture:
-      - "architecture"
-      - "technical"
-      - "component"
-      - "microservice"
-    configuration:
-      - "configuration"
-      - "customization"
-      - "extension"
-      - "personalization"
-    updates:
-      - "update"
-      - "upgrade"
-      - "version"
-      - "release"
-      - "deployment"
-    data:
-      - "data"
-      - "reporting"
-      - "snowflake"
-      - "analytics"
-    warehouse:
-      - "warehouse"
-      - "wms"
-      - "inventory"
-      - "fulfillment"
+  # Minimum technical details length
+  min_technical_details_length: 10

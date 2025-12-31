@@ -1,16 +1,25 @@
 import cv2
 import os
+from config.config_loader import get, get_path
 
 
 def extract_frames(
     video_path: str,
-    output_dir: str = "data/frames",
-    threshold: float = 0.05,
-    sample_rate: int = 1
+    output_dir: str = None,
+    threshold: float = None,
+    sample_rate: int = None
 ) -> list[dict]:
     """
     Extract frames when slide changes detected.
     """
+    # Load defaults from config
+    if output_dir is None:
+        output_dir = get_path("processing", "frames.output_dir")
+    if threshold is None:
+        threshold = get("processing", "frames.pixel_threshold", 0.05)
+    if sample_rate is None:
+        sample_rate = get("processing", "frames.sample_rate", 1)
+
     os.makedirs(output_dir, exist_ok=True)
     
     cap = cv2.VideoCapture(video_path)
@@ -33,7 +42,8 @@ def extract_frames(
                 save = True
             else:
                 diff = cv2.absdiff(gray, prev_frame)
-                changed = (diff > 25).sum() / diff.size
+                pixel_diff_threshold = get("processing", "frames.pixel_diff_threshold", 25)
+                changed = (diff > pixel_diff_threshold).sum() / diff.size
                 save = changed > threshold
             
             if save:
@@ -60,12 +70,16 @@ def extract_frames(
     return saved_frames
 
 
-def _deduplicate_frames(frames: list[dict], similarity_threshold: float = 0.85) -> list[dict]:
+def _deduplicate_frames(frames: list[dict], similarity_threshold: float = None) -> list[dict]:
     """Remove frames that are too similar (pixel or OCR text)."""
     import pytesseract
     from PIL import Image
-    
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+    if similarity_threshold is None:
+        similarity_threshold = get("processing", "deduplication.pixel_similarity", 0.85)
+
+    tesseract_path = get("settings", "tools.tesseract_path")
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
     
     if len(frames) <= 1:
         return frames
@@ -89,16 +103,18 @@ def _deduplicate_frames(frames: list[dict], similarity_threshold: float = 0.85) 
             pass
         
         # Check pixel similarity
-        prev_small = cv2.resize(prev_img, (100, 100))
-        curr_small = cv2.resize(curr_img, (100, 100))
+        comparison_size = get("processing", "deduplication.comparison_size", [100, 100])
+        prev_small = cv2.resize(prev_img, tuple(comparison_size))
+        curr_small = cv2.resize(curr_img, tuple(comparison_size))
         diff = cv2.absdiff(prev_small, curr_small)
-        pixel_similarity = 1 - (diff.sum() / (255 * 100 * 100))
-        
+        pixel_similarity = 1 - (diff.sum() / (255 * comparison_size[0] * comparison_size[1]))
+
         # Check OCR text similarity
         text_similarity = _text_similarity(prev_text, curr_text)
-        
+        text_sim_threshold = get("processing", "deduplication.text_similarity", 0.90)
+
         # Keep if BOTH are different enough
-        if pixel_similarity < similarity_threshold or text_similarity < 0.90:
+        if pixel_similarity < similarity_threshold or text_similarity < text_sim_threshold:
             unique.append(frame)
             prev_img = curr_img
             prev_text = curr_text
@@ -125,18 +141,13 @@ def _filter_junk_frames(frames: list[dict]) -> list[dict]:
     """Remove frames with Teams UI, waiting screens, etc."""
     import pytesseract
     from PIL import Image
-    
+
     # Set tesseract path
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-    
-    junk_patterns = [
-        "waiting for others",
-        "joining",
-        "click to add subtitle",
-        "microsoft teams",
-        "mute",
-        "leave"
-    ]
+    tesseract_path = get("settings", "tools.tesseract_path")
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
+
+    # Load junk patterns from config
+    junk_patterns = get("filters", "frame_junk_patterns", [])
     
     filtered = []
     for frame in frames:
