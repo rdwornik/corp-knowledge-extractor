@@ -15,6 +15,7 @@ pytest==8.3.0
 # Audio/Video processing
 openai-whisper==20250625
 pillow==12.0.0
+pydub==0.25.1
 
 # Data processing
 numpy==2.2.6

@@ -30,6 +30,44 @@ llm:
   whisper_model: "medium"
 
 # ======================
+# TRANSCRIPTION SETTINGS
+# ======================
+
+transcription:
+  # Provider (groq, openai, local)
+  provider: "groq"
+
+  # Maximum file size before preprocessing (MB)
+  max_file_size_mb: 25
+
+  # Silence removal settings
+  silence_removal:
+    # Enable silence removal to reduce file size
+    enabled: true
+
+    # Silence threshold in dB (higher = more aggressive)
+    # -40dB is good for meetings (removes pauses, keeps speech)
+    # -30dB would be more aggressive, -50dB more conservative
+    threshold_db: -40
+
+    # Minimum silence duration to remove (seconds)
+    # 2.0s removes long pauses between topics
+    # 1.0s would remove shorter pauses
+    min_silence_duration: 2.0
+
+  # Audio chunking for large files
+  chunking:
+    # Enable automatic chunking if file exceeds max_file_size_mb
+    enabled: true
+
+    # Maximum chunk size in MB (keep under 25MB for Groq)
+    max_chunk_size_mb: 24
+
+    # Overlap between chunks in seconds (preserves context at boundaries)
+    # 5s ensures words at chunk boundaries aren't lost
+    overlap_seconds: 5.0
+
+# ======================
 # CONTENT LIMITS
 # ======================
 
