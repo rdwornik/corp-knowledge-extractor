@@ -369,6 +369,325 @@ Before deploying updated prompts or configs:
    - Both must sort frames by timestamp before ID assignment
    - Detection: Manual verification during spot checks
 
+## Content Type Presets System
+
+### Architecture
+
+The preset system allows customizing frame extraction behavior for different content types (PowerPoint, Excel, Demo, Audio-only, Hybrid).
+
+**Location:** `config/presets/*.yaml`
+
+**Components:**
+1. **Preset YAML files** - Configuration for each content type
+2. **extractor.py** - `load_preset()` function loads YAML into dict
+3. **run.py** - CLI argument `--preset <name>` passes to extractor
+4. **AdaptiveFrameTracker** - Class for hybrid mode dynamic switching
+
+### Available Presets
+
+**powerpoint.yaml:**
+- Default behavior, optimized for slide-based presentations
+- Sample rate: 1s, Pixel threshold: 5%, Max/min: 10
+- Use case: Training videos, pitch decks
+
+**excel.yaml:**
+- Sparse sampling for spreadsheet scrolling
+- Sample rate: 10s, Pixel threshold: 30%, Max/min: 3
+- Prevents frame explosion from cell selection/scroll
+- Use case: Financial reports, dashboard reviews
+
+**demo.yaml:**
+- Time-based sampling for software demonstrations
+- Sample rate: 15s, Pixel threshold: 25%, Max/min: 4
+- Ignores cursor movement and hover states
+- Use case: Feature walkthroughs, UI tutorials
+
+**audio_only.yaml:**
+- Disables frame extraction (`frames.enabled: false`)
+- Returns empty frame list, skips OCR/tagging/alignment
+- Use case: Client calls, phone meetings, interviews
+
+**hybrid.yaml:**
+- Adaptive mode with automatic content detection
+- Analyzes activity every 60 seconds (`analysis_window`)
+- Switches between powerpoint/demo modes based on frame rate
+- Logs mode switches for transparency
+- Use case: Mixed content (slides + demo + discussion)
+
+### How Presets Work
+
+**1. Loading:**
+```python
+from src.frames.extractor import load_preset
+
+preset_config = load_preset("excel")  # Loads config/presets/excel.yaml
+# Returns dict with:
+# - frames: {sample_rate, pixel_threshold, max_per_minute, max_total}
+# - deduplication: {enabled, similarity_threshold, pixel_similarity}
+# - synthesis: {focus, speaker_explanation_weight}
+```
+
+**2. Applying:**
+```python
+extract_frames(
+    video_path,
+    preset="excel",  # Uses excel.yaml settings
+    sample_rate=None,  # Override if needed
+    threshold=None
+)
+```
+
+**3. Adaptive Mode (Hybrid Preset):**
+```python
+class AdaptiveFrameTracker:
+    # Tracks frame activity in sliding window
+    def add_frame(timestamp)
+    def should_check_switch(current_time)
+    def check_and_switch(total_frames, current_time)
+        # Analyzes frames/minute in last 60 seconds
+        # High activity (>5 f/min) → switch to demo mode
+        # Low activity (<2 f/min) → switch to powerpoint mode
+        # Returns new settings dict or None
+```
+
+**4. Usage:**
+```bash
+# Via CLI
+python scripts/run.py --preset excel
+
+# Via code
+f = extract_frames("video.mp4", preset="excel")
+```
+
+### Adding New Presets
+
+1. **Create YAML file** in `config/presets/`:
+```yaml
+name: "My Custom Preset"
+description: "Description of use case"
+
+frames:
+  enabled: true
+  sample_rate: 5  # Seconds between checks
+  pixel_threshold: 0.20  # 0.0-1.0
+  max_per_minute: 8
+  max_total: 200
+
+  deduplication:
+    enabled: true
+    similarity_threshold: 0.88
+    pixel_similarity: 0.88
+
+synthesis:
+  focus: "my_focus_type"
+  speaker_explanation_weight: "high"
+```
+
+2. **Update run.py** - Add to `choices` list in argparse
+3. **Update README.md** - Document the new preset
+4. **Test** - Verify with representative video
+
+### Preset Configuration Fields
+
+**frames.enabled:** Boolean - Enable/disable frame extraction
+**frames.sample_rate:** Int - Seconds between frame checks
+**frames.pixel_threshold:** Float 0.0-1.0 - % of pixels changed = new frame
+**frames.max_per_minute:** Int - Prevent frame explosion
+**frames.max_total:** Int - Hard limit for very long videos
+**frames.mode:** String - "adaptive" for hybrid, omit for static
+**frames.deduplication:** Dict - Similarity thresholds for dedup
+
+**Adaptive mode fields (hybrid only):**
+**frames.analysis_window:** Int - Seconds in sliding window (60)
+**frames.adaptive_rules:** Dict - Thresholds for mode switching
+**frames.modes:** Dict - Settings for each sub-mode (powerpoint/demo/excel)
+
+### Design Decisions
+
+**Why presets vs. hardcoded values?**
+- Different content types need different strategies
+- Excel scrolling generates 10x more frames than PowerPoint
+- Demo cursor movement shouldn't trigger frames
+- Audio-only needs to skip frame pipeline entirely
+
+**Why YAML vs. Python?**
+- Non-technical users can adjust settings
+- No code changes needed for tuning
+- Version control shows config history
+- Easy A/B testing of parameters
+
+**Why adaptive mode?**
+- Real meetings mix content types
+- Manual mode switching is tedious
+- Auto-detection handles 80% of cases
+- Logging shows when switches happen (transparency)
+
+## Report Comparison System
+
+### Architecture
+
+The comparison system detects quality regressions by diff'ing two reports.
+
+**Location:** `scripts/compare_reports.py`
+
+**Components:**
+1. **load_report_data()** - Loads markdown, JSONL, metadata
+2. **compare_*()** functions - Frame/slide/QA/quality comparisons
+3. **determine_verdict()** - Overall assessment (improved/degraded/mixed)
+4. **generate_markdown_report()** - Human-readable diff
+5. **generate_json_metrics()** - Machine-readable metrics
+
+### How It Works
+
+**1. Load Reports:**
+```python
+old = load_report_data("output/2025-01-01_1200")
+new = load_report_data("output/2025-01-03_1430")
+
+# Extracts:
+# - Slide titles and explanations from markdown
+# - Q&A pairs from knowledge.jsonl
+# - Frame count from frames/ directory
+# - Quality metrics via QualityChecker
+```
+
+**2. Compare Metrics:**
+```python
+comparison = {
+    "frames": {"old_count": 94, "new_count": 87, "change": -7},
+    "slides": {"removed_titles": [...], "added_titles": [...]},
+    "qa_pairs": {"old_count": 280, "new_count": 310, "change": +30},
+    "quality": {
+        "improvements": ["Longer explanations (+20%)"],
+        "regressions": []
+    }
+}
+```
+
+**3. Determine Verdict:**
+```python
+def determine_verdict(comparison):
+    if regressions and not improvements:
+        return {"verdict": "degraded", "has_regressions": True}
+    elif improvements and not regressions:
+        return {"verdict": "improved", "has_regressions": False}
+    elif improvements and regressions:
+        return {"verdict": "mixed", "has_regressions": True}
+    else:
+        return {"verdict": "unchanged", "has_regressions": False}
+```
+
+**4. Generate Outputs:**
+- **comparison_report.md** - Summary table, improvements/regressions lists, changed explanations
+- **comparison_metrics.json** - All metrics for CI/CD integration
+
+### Usage
+
+**Basic Comparison:**
+```bash
+python scripts/compare_reports.py output/old output/new
+# Outputs: comparison_report.md + comparison_metrics.json
+```
+
+**CI/CD Integration:**
+```bash
+# Fail build if regressions detected
+python scripts/compare_reports.py \
+  tests/fixtures/baseline \
+  output/latest \
+  --fail-on-regression
+
+# Exit codes:
+# 0 = no regressions (pass)
+# 1 = regressions detected (fail)
+```
+
+**Baseline Workflow:**
+```bash
+# 1. Establish baseline
+python scripts/run.py
+cp -r output/latest tests/fixtures/baseline_v1
+
+# 2. Make changes (update prompt, config, code)
+# ... edit files ...
+
+# 3. Re-run pipeline
+python scripts/run.py
+
+# 4. Compare
+python scripts/compare_reports.py \
+  tests/fixtures/baseline_v1 \
+  output/latest
+
+# 5. Review comparison_report.md
+# 6. If improved: update baseline
+# 7. If degraded: fix issues
+```
+
+### Comparison Metrics
+
+**Frames:**
+- Count change (absolute and percentage)
+- Indicates if frame extraction improved/degraded
+
+**Slides:**
+- Removed titles (slides that disappeared)
+- Added titles (new slides detected)
+- Helps identify if deduplication changed
+
+**Q&A Pairs:**
+- Count change (more Q&A = more knowledge extracted)
+- Percentage change
+
+**Quality Metrics:**
+- Average explanation length (longer = more detail)
+- Empty explanation count (should be low)
+- Junk slide count (should decrease over time)
+- General category percentage (should decrease = better categorization)
+
+**Content Changes:**
+- Slides with changed explanations
+- Change type: improved/degraded/rewritten
+- Length comparison
+
+### Design Decisions
+
+**Why compare reports vs. raw pipeline output?**
+- Reports are the user-facing artifact
+- Markdown diffs are human-readable
+- Quality metrics in reports reflect actual value
+
+**Why separate markdown and JSON outputs?**
+- Markdown for humans (review in GitHub, email)
+- JSON for machines (CI/CD, automated alerts)
+
+**Why fail-on-regression flag?**
+- Prevents accidental quality degradation
+- Blocks PR merges if tests show regression
+- Forces explicit override for intentional changes
+
+**Why track removed/added slides?**
+- Deduplication changes can remove valid content
+- New slides indicate better detection
+- Helps debug frame extraction issues
+
+### Integration with Quality Tests
+
+```python
+# tests/test_quality.py provides the metrics
+from tests.test_quality import QualityChecker
+
+checker = QualityChecker(report_dir)
+quality_data = {
+    "speaker_explanation": checker.check_speaker_explanation_quality(),
+    "junk_frames": checker.check_no_junk_frames(),
+    "categories": checker.check_categories_balanced(),
+    "qa_pairs": checker.check_qa_pairs_quality()
+}
+
+# compare_reports.py uses these metrics for comparison
+```
+
 ## Future Improvements
 
 1. **Multi-input support (Type B/C meetings):**
