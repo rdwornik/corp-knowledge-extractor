@@ -8,6 +8,7 @@ PyYAML==6.0.1
 # API clients
 groq==0.12.0
 google-generativeai==0.8.3
+openai==1.58.1
 
 # Testing
 pytest==8.3.0

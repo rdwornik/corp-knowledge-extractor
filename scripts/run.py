@@ -5,6 +5,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.config_loader import get, get_path
 from src.transcribe.groq_backend import transcribe_groq
+from src.transcribe.openai_backend import transcribe_openai, transcribe_openai_with_preprocessing
+from src.transcribe.provider_selector import (
+    select_provider,
+    estimate_transcription,
+    print_estimate,
+    validate_provider_selection
+)
 from src.frames.extractor import extract_frames
 from src.ocr.reader import read_frames
 from src.frames.tagger import tag_frames
@@ -20,7 +27,14 @@ CUSTOM_TERMS = get("anonymize", "custom_terms", [])
 VIDEO_EXTENSIONS = tuple(get("settings", "input.video_extensions", [".mp4", ".mkv", ".avi", ".mov"]))
 
 
-def process_file(file_path: str, preset: str = None, sample_rate: int = None, pixel_threshold: float = None):
+def process_file(
+    file_path: str,
+    preset: str = None,
+    sample_rate: int = None,
+    pixel_threshold: float = None,
+    provider: str = "auto",
+    estimate_only: bool = False
+):
     """
     Process a video file with optional preset configuration.
 
@@ -29,15 +43,53 @@ def process_file(file_path: str, preset: str = None, sample_rate: int = None, pi
         preset: Preset name (powerpoint, excel, demo, audio_only, hybrid)
         sample_rate: Override sample rate
         pixel_threshold: Override pixel threshold
+        provider: Transcription provider ("auto", "groq", "openai")
+        estimate_only: Only show cost estimate, don't process
     """
     name = os.path.basename(file_path)
     print(f"\n{'='*50}")
     print(f"Processing: {name}")
     print('='*50)
 
-    print("Step 1: Transcribing (Groq API)...")
-    t = transcribe_groq(file_path)
-    print(f"  {len(t)} segments")
+    # Step 0: Provider selection and cost estimation
+    print("\nStep 0: Analyzing file and selecting transcription provider...")
+
+    if provider == "auto":
+        # Automatic selection based on file analysis
+        selected_provider = select_provider(file_path, show_estimate=True)
+    else:
+        # Manual provider selection - still show estimate
+        estimate = estimate_transcription(file_path)
+        print_estimate(estimate, file_path)
+
+        # Override with user selection
+        selected_provider = provider
+        print(f"\n⚙️  User override: Using {selected_provider.upper()}")
+
+    # Validate API key is available
+    validate_provider_selection(selected_provider)
+
+    # If estimate-only mode, stop here
+    if estimate_only:
+        print("\n✓ Estimate complete (--estimate-only mode)")
+        return
+
+    # Step 1: Transcription
+    print(f"\nStep 1: Transcribing with {selected_provider.upper()}...")
+
+    if selected_provider == "groq":
+        t = transcribe_groq(file_path)
+    elif selected_provider == "openai":
+        # Use OpenAI with preprocessing to reduce costs
+        use_preprocessing = get("settings", "transcription.silence_removal.enabled", True)
+        t = transcribe_openai_with_preprocessing(
+            file_path,
+            enable_preprocessing=use_preprocessing
+        )
+    else:
+        raise ValueError(f"Unknown provider: {selected_provider}")
+
+    print(f"  ✓ {len(t)} segments transcribed")
 
     print("Step 2: Extracting frames...")
     f = extract_frames(
@@ -156,6 +208,19 @@ Available Presets:
         help="Process specific file instead of all files in input directory"
     )
 
+    parser.add_argument(
+        "--provider",
+        choices=["auto", "groq", "openai"],
+        default="auto",
+        help="Transcription provider (default: auto-select based on file size and cost)"
+    )
+
+    parser.add_argument(
+        "--estimate-only",
+        action="store_true",
+        help="Show transcription cost estimate without processing"
+    )
+
     args = parser.parse_args()
 
     # Determine files to process
@@ -193,7 +258,9 @@ Available Presets:
             file_path,
             preset=args.preset,
             sample_rate=args.sample_rate,
-            pixel_threshold=args.pixel_threshold
+            pixel_threshold=args.pixel_threshold,
+            provider=args.provider,
+            estimate_only=args.estimate_only
         )
 
     print("\n✓ All done!")
