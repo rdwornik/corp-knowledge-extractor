@@ -2,10 +2,13 @@ import os
 import subprocess
 import tempfile
 import sys
+import time
+import re
 from pathlib import Path
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from groq import Groq
+from groq import RateLimitError
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent.parent
@@ -16,6 +19,68 @@ from src.transcribe.chunker import split_and_get_metadata, merge_transcripts
 from config.config_loader import get
 
 load_dotenv()
+
+
+def parse_wait_time(error_message: str) -> Optional[int]:
+    """
+    Parse wait time from Groq rate limit error message.
+
+    Example error message:
+    "Rate limit reached. Please try again in 19m35.5s."
+
+    Args:
+        error_message: Error message string
+
+    Returns:
+        Wait time in seconds, or None if not found
+    """
+    # Pattern: "try again in 19m35.5s" or "try again in 35s" or "try again in 1h5m"
+    pattern = r'try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?'
+    match = re.search(pattern, error_message, re.IGNORECASE)
+
+    if match:
+        hours = int(match.group(1)) if match.group(1) else 0
+        minutes = int(match.group(2)) if match.group(2) else 0
+        seconds = float(match.group(3)) if match.group(3) else 0
+
+        total_seconds = hours * 3600 + minutes * 60 + seconds
+        return int(total_seconds) + 5  # Add 5s buffer
+
+    return None
+
+
+def wait_with_progress(seconds: int, reason: str = "Rate limit"):
+    """
+    Wait for specified seconds with progress updates.
+
+    Args:
+        seconds: Number of seconds to wait
+        reason: Reason for waiting (for display)
+    """
+    minutes = seconds // 60
+    remaining_secs = seconds % 60
+
+    if minutes > 0:
+        print(f"  {reason}. Waiting {minutes}m {remaining_secs}s...")
+    else:
+        print(f"  {reason}. Waiting {remaining_secs}s...")
+
+    # Wait in chunks with progress
+    interval = 30  # Update every 30s
+    elapsed = 0
+
+    while elapsed < seconds:
+        chunk = min(interval, seconds - elapsed)
+        time.sleep(chunk)
+        elapsed += chunk
+
+        if elapsed < seconds:
+            remaining = seconds - elapsed
+            remaining_min = remaining // 60
+            remaining_sec = remaining % 60
+            print(f"    ... {remaining_min}m {remaining_sec}s remaining")
+
+    print(f"  ✓ Wait complete, retrying...")
 
 
 def extract_audio(video_path: str, output_path: str) -> str:
@@ -31,18 +96,28 @@ def extract_audio(video_path: str, output_path: str) -> str:
 def _transcribe_chunk(
     audio_path: str,
     model: str = "whisper-large-v3",
-    client: Optional[Groq] = None
+    client: Optional[Groq] = None,
+    retry_enabled: bool = True,
+    max_retries: int = 3
 ) -> List[Dict]:
     """
-    Transcribe a single audio chunk using Groq API.
+    Transcribe a single audio chunk using Groq API with retry logic.
+
+    Automatically retries on rate limit errors with exponential backoff.
 
     Args:
         audio_path: Path to audio file (must be < 25MB)
         model: Whisper model name
         client: Groq client (will create if None)
+        retry_enabled: Enable automatic retry on rate limit
+        max_retries: Maximum number of retries
 
     Returns:
         List of segments with timestamps
+
+    Raises:
+        RateLimitError: If max retries exceeded
+        ValueError: If file too large or API key missing
     """
     if client is None:
         api_key = os.getenv("GROQ_API_KEY")
@@ -58,27 +133,98 @@ def _transcribe_chunk(
             f"Maximum size is 25MB. Use split_audio() first."
         )
 
+    # Load retry config
+    try:
+        retry_config = get("settings", "transcription.retry", {})
+        if isinstance(retry_config, dict):
+            retry_enabled = retry_config.get("enabled", retry_enabled)
+            max_retries = retry_config.get("max_retries", max_retries)
+            initial_delay = retry_config.get("initial_delay", 60)
+            backoff_multiplier = retry_config.get("backoff_multiplier", 1.5)
+        else:
+            initial_delay = 60
+            backoff_multiplier = 1.5
+    except:
+        initial_delay = 60
+        backoff_multiplier = 1.5
+
     print(f"  Transcribing {os.path.basename(audio_path)} ({file_size_mb:.1f}MB)...")
 
-    with open(audio_path, "rb") as file:
-        transcription = client.audio.transcriptions.create(
-            file=(os.path.basename(audio_path), file.read()),
-            model=model,
-            response_format="verbose_json"
-        )
+    retry_count = 0
+    last_error = None
 
-    segments = [
-        {
-            "start": seg["start"],
-            "end": seg["end"],
-            "text": seg["text"].strip()
-        }
-        for seg in transcription.segments
-    ]
+    while retry_count <= max_retries:
+        try:
+            with open(audio_path, "rb") as file:
+                transcription = client.audio.transcriptions.create(
+                    file=(os.path.basename(audio_path), file.read()),
+                    model=model,
+                    response_format="verbose_json"
+                )
 
-    print(f"  ✓ Transcribed {len(segments)} segments")
+            segments = [
+                {
+                    "start": seg["start"],
+                    "end": seg["end"],
+                    "text": seg["text"].strip()
+                }
+                for seg in transcription.segments
+            ]
 
-    return segments
+            print(f"  ✓ Transcribed {len(segments)} segments")
+
+            return segments
+
+        except RateLimitError as e:
+            last_error = e
+            retry_count += 1
+
+            if not retry_enabled or retry_count > max_retries:
+                print(f"\n  ❌ Rate limit exceeded after {retry_count - 1} retries")
+                print(f"  Suggestion: Use --provider openai for faster processing")
+                raise
+
+            # Parse wait time from error message
+            error_msg = str(e)
+            wait_time = parse_wait_time(error_msg)
+
+            if wait_time is None:
+                # Fallback to exponential backoff if can't parse
+                wait_time = int(initial_delay * (backoff_multiplier ** (retry_count - 1)))
+
+            print(f"\n  ⚠️  Rate limit reached (retry {retry_count}/{max_retries})")
+            wait_with_progress(wait_time, "Rate limit")
+
+    # Should not reach here, but just in case
+    if last_error:
+        raise last_error
+    else:
+        raise ValueError("Transcription failed for unknown reason")
+
+
+def _transcribe_chunk_simple(
+    audio_path: str,
+    model: str = "whisper-large-v3",
+    client: Optional[Groq] = None
+) -> List[Dict]:
+    """
+    Simple transcription without retry (for backwards compatibility).
+
+    Args:
+        audio_path: Path to audio file
+        model: Whisper model name
+        client: Groq client
+
+    Returns:
+        List of segments
+    """
+    return _transcribe_chunk(
+        audio_path,
+        model=model,
+        client=client,
+        retry_enabled=False,
+        max_retries=0
+    )
 
 
 def transcribe_groq(

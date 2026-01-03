@@ -1029,6 +1029,290 @@ Tests cover:
 - 2 API calls × $0.001 = $0.002
 - **Effectively free** on Groq's free tier
 
+## Intelligent Provider Selection
+
+### Problem
+
+Corporate meetings vary widely in duration:
+- **Short meetings** (< 1h 40min): Groq free tier is perfect
+- **Long meetings** (> 1h 40min): Groq free tier has hourly rate limits
+- **Very long meetings** (5+ hours): Would require multiple Groq sessions with 20-minute waits
+
+Users shouldn't have to manually calculate which provider to use or deal with rate limit errors mid-processing.
+
+### Solution
+
+Automatic provider selection based on file duration, cost analysis, and API availability.
+
+**Decision Tree:**
+```
+File Analysis
+    ↓
+[1] Get duration (e.g., 5h 20min)
+    ↓
+[2] Check Groq limit (7200s/hour)
+    ↓
+[3] Estimate costs:
+    - Groq: FREE but 3 sessions, ~2.5h total time
+    - OpenAI: $1.92, ~8min total time
+    ↓
+[4] Auto-select: OpenAI (faster, worth the cost)
+    ↓
+[5] Show estimate, proceed with selected provider
+```
+
+### Configuration
+
+**config/settings.yaml:**
+```yaml
+transcription:
+  provider: "auto"  # "auto", "groq", "openai"
+
+  auto_selection:
+    groq_max_duration_seconds: 6000  # 1h 40min safe threshold
+    prefer_free: true                 # Try Groq first if within limits
+
+  groq:
+    model: "whisper-large-v3"
+    rate_limit_seconds_per_hour: 7200
+
+  openai:
+    model: "whisper-1"
+    cost_per_minute: 0.006
+
+  retry:
+    enabled: true
+    max_retries: 3
+    backoff_multiplier: 1.5
+```
+
+### Usage Examples
+
+**Example 1: Automatic Selection (Default)**
+```bash
+python scripts/run.py --file meeting.mp4
+
+# Output:
+# === TRANSCRIPTION ESTIMATE ===
+# File: meeting.mp4
+# Duration: 45min (2700 seconds)
+#
+# Provider options:
+# [1] Groq (FREE) - ✅ Available
+#     Total time: ~8 minutes
+#
+# [2] OpenAI Whisper (Available)
+#     Cost: $0.27
+#     Total time: ~5 minutes
+#
+# Auto-selecting: GROQ
+# Reason: Within free tier limits
+```
+
+**Example 2: Force OpenAI (Paid, Fast)**
+```bash
+python scripts/run.py --file long_meeting.mp4 --provider openai
+
+# Immediately uses OpenAI regardless of file size
+# Good for production when speed matters more than cost
+```
+
+**Example 3: Estimate Only**
+```bash
+python scripts/run.py --file training.mp4 --estimate-only
+
+# Shows cost estimate without processing
+# Helps budget decisions for large video archives
+```
+
+**Example 4: Large File Auto-Selection**
+```bash
+python scripts/run.py --file 5_hour_training.mp4
+
+# Output:
+# === TRANSCRIPTION ESTIMATE ===
+# File: 5_hour_training.mp4
+# Duration: 5h 20min (19213 seconds)
+#
+# Provider options:
+# [1] Groq (FREE) - ⚠️ Exceeds hourly limit (7200s)
+#     Would require ~3 sessions with 20min waits
+#     Total time: ~150 minutes
+#
+# [2] OpenAI Whisper (✅ Recommended)
+#     Cost: $1.92
+#     Total time: ~8 minutes
+#
+# Auto-selecting: OPENAI
+# Reason: File too large for Groq free tier (would require 3 sessions with 60min waits)
+```
+
+### Provider Comparison
+
+| Provider | Cost | Speed | File Size Limit | Rate Limits | Best For |
+|----------|------|-------|-----------------|-------------|----------|
+| **Groq** | FREE | ~0.5x realtime | 25MB | 7200s/hour | Short meetings (<1h 40min) |
+| **OpenAI** | $0.006/min | ~10x realtime | None | Generous | Long meetings, production |
+
+**Groq Advantages:**
+- Completely free
+- Good quality (Whisper large-v3)
+- Fast for short files
+
+**Groq Disadvantages:**
+- 25MB file size limit (requires chunking)
+- 7200s/hour rate limit
+- Long waits for large files (multiple sessions)
+
+**OpenAI Advantages:**
+- No file size limits
+- 10x faster processing
+- No practical rate limits
+- Handles large files directly
+
+**OpenAI Disadvantages:**
+- Costs $0.006/minute of audio
+- Requires API billing setup
+
+### Cost Examples
+
+| Meeting Type | Duration | Groq Cost | OpenAI Cost | Recommendation |
+|--------------|----------|-----------|-------------|----------------|
+| Team standup | 15min | $0 (FREE) | $0.09 | Groq |
+| Client call | 1h | $0 (FREE) | $0.36 | Groq |
+| Training (short) | 1h 30min | $0 (FREE) | $0.54 | Groq |
+| Training (long) | 5h | $0 (3 sessions)* | $1.80 | OpenAI |
+| All-day workshop | 8h | $0 (4 sessions)* | $2.88 | OpenAI |
+
+*Groq is free but requires multiple sessions with 20-minute waits between them
+
+**Break-Even Analysis:**
+- For files < 1h 40min: Always use Groq (free)
+- For files > 1h 40min: OpenAI worth it ($0.006/min vs. waiting)
+- For production pipelines: OpenAI (speed + reliability)
+- For budget-constrained hobbyists: Groq (patience pays off)
+
+### Automatic Retry Logic
+
+**Groq Rate Limit Handling:**
+
+When Groq returns a rate limit error:
+```
+RateLimitError: Rate limit reached. Please try again in 19m35.5s.
+```
+
+The system automatically:
+1. Parses wait time from error message ("19m35.5s" → 1175 seconds)
+2. Shows progress: "⚠️ Rate limit reached (retry 1/3). Waiting 19m 36s..."
+3. Waits with 30-second progress updates
+4. Retries automatically
+5. After 3 failed retries, suggests: "Use --provider openai for faster processing"
+
+**Example Output:**
+```
+  Transcribing chunk_001.mp3 (24.5MB)...
+
+  ⚠️  Rate limit reached (retry 1/3)
+  Rate limit. Waiting 19m 36s...
+    ... 19m 6s remaining
+    ... 18m 36s remaining
+    ... 18m 6s remaining
+    ...
+  ✓ Wait complete, retrying...
+
+  Transcribing chunk_001.mp3 (24.5MB)...
+  ✓ Transcribed 1,234 segments
+```
+
+### Implementation Architecture
+
+**Files:**
+
+1. **src/transcribe/provider_selector.py** - Intelligence
+   - `estimate_transcription()` - Analyze file and calculate costs
+   - `select_provider()` - Auto-select best provider
+   - `print_estimate()` - Format user-friendly output
+
+2. **src/transcribe/openai_backend.py** - OpenAI integration
+   - `transcribe_openai()` - Simple OpenAI transcription
+   - `transcribe_openai_with_preprocessing()` - With silence removal (reduces cost)
+
+3. **src/transcribe/groq_backend.py** - Enhanced with retry
+   - `parse_wait_time()` - Extract wait time from error message
+   - `wait_with_progress()` - User-friendly wait display
+   - `_transcribe_chunk()` - Now includes automatic retry logic
+
+4. **scripts/run.py** - CLI integration
+   - `--provider {auto,groq,openai}` - Manual override
+   - `--estimate-only` - Cost estimation without processing
+
+### API Key Setup
+
+Add both API keys to `.env`:
+
+```bash
+# Groq (free tier)
+GROQ_API_KEY=gsk_...
+
+# OpenAI (paid)
+OPENAI_API_KEY=sk-...
+```
+
+**Note:** You only need the API key for the provider you intend to use. The system will validate keys before processing.
+
+### Troubleshooting
+
+**Problem: "GROQ_API_KEY not found in .env"**
+```bash
+# Solution: Add to .env file
+echo "GROQ_API_KEY=your_key_here" >> .env
+```
+
+**Problem: "OPENAI_API_KEY not found in .env"**
+```bash
+# Either add the key OR use Groq instead
+python scripts/run.py --provider groq
+```
+
+**Problem: Groq rate limit keeps failing**
+```bash
+# Solution 1: Wait for rate limit to reset (1 hour)
+# Solution 2: Use OpenAI instead
+python scripts/run.py --provider openai
+```
+
+**Problem: OpenAI costs too much for large archive**
+```bash
+# Use preprocessing to reduce costs by 30-40%
+# Already enabled by default in openai_backend.py
+
+# Or process in batches during off-hours with Groq
+# Split 100 videos across 10 days = 10 videos/day within free tier
+```
+
+### Best Practices
+
+**For Development:**
+- Use `--estimate-only` first to understand costs
+- Use Groq for short test files (free)
+- Use OpenAI when iterating quickly (worth the cost)
+
+**For Production:**
+- Set `provider: "openai"` in config for reliability
+- Use preprocessing to reduce OpenAI costs
+- Monitor spending with OpenAI usage dashboard
+
+**For Large Archives:**
+- Run `--estimate-only` on sample files first
+- Calculate total cost: `num_files × avg_cost_per_file`
+- Batch process with Groq over time (10 files/day free)
+- Or budget for OpenAI bulk processing ($50-100 for 100 hours)
+
+**Cost Optimization:**
+- Enable silence removal: 30-40% cost reduction
+- Process during off-peak: Groq rate limits reset hourly
+- Archive compressed versions: Reprocess later if needed
+
 ## Model Selection Guide
 
 Use `/model claude-sonnet-4-20250514` (default) for:

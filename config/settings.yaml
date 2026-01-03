@@ -34,11 +34,56 @@ llm:
 # ======================
 
 transcription:
-  # Provider (groq, openai, local)
-  provider: "groq"
+  # Provider selection
+  # Options: "auto", "groq", "openai"
+  # "auto" = intelligent selection based on file duration and cost
+  provider: "auto"
 
-  # Maximum file size before preprocessing (MB)
-  max_file_size_mb: 25
+  # Auto-selection thresholds
+  auto_selection:
+    # Maximum duration for Groq free tier (seconds)
+    # Groq has 7200s/hour limit - use 6000s (1h 40min) as safe threshold
+    groq_max_duration_seconds: 6000
+
+    # Prefer free tier when possible
+    prefer_free: true
+
+    # Warn if file would require multiple Groq sessions
+    warn_multiple_sessions: true
+
+  # Groq settings (FREE TIER)
+  groq:
+    model: "whisper-large-v3"
+
+    # Rate limit: 7200 seconds per hour
+    rate_limit_seconds_per_hour: 7200
+
+    # Maximum file size before preprocessing (MB)
+    max_file_size_mb: 25
+
+  # OpenAI settings (PAID)
+  openai:
+    model: "whisper-1"
+
+    # Cost per minute of audio ($0.006/min as of 2025)
+    cost_per_minute: 0.006
+
+    # No file size limit for OpenAI
+    max_file_size_mb: null
+
+  # Retry settings for both providers
+  retry:
+    # Enable automatic retry on rate limit errors
+    enabled: true
+
+    # Maximum number of retries
+    max_retries: 3
+
+    # Backoff multiplier (wait time increases each retry)
+    backoff_multiplier: 1.5
+
+    # Initial retry delay (seconds)
+    initial_delay: 60
 
   # Silence removal settings
   silence_removal:
@@ -55,7 +100,7 @@ transcription:
     # 1.0s would remove shorter pauses
     min_silence_duration: 2.0
 
-  # Audio chunking for large files
+  # Audio chunking for large files (mainly for Groq)
   chunking:
     # Enable automatic chunking if file exceeds max_file_size_mb
     enabled: true
