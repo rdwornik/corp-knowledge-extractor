@@ -1,0 +1,98 @@
+# Audio-Only Preset
+# Optimized for: Client meetings, phone calls, audio recordings
+# Behavior: No frame extraction, focus on conversation analysis
+
+name: "Audio Only"
+description: "Meeting without visual content - transcription and conversation focus"
+
+frames:
+  # Disable frame extraction entirely
+  enabled: false
+
+synthesis:
+  # Focus on conversation, action items, decisions
+  focus: "conversation"
+
+  # Structure for audio-only output
+  output_structure:
+    - "meeting_summary"
+    - "key_decisions"
+    - "action_items"
+    - "discussion_topics"
+    - "participant_insights"
+
+  # Emphasis on extracting actionable items
+  action_item_detection: true
+
+  # Decision tracking
+  decision_tracking: true
+
+  # Sentiment analysis (optional)
+  sentiment_analysis: false
+
+transcription:
+  # Enhanced transcription settings for audio-only
+  # Speaker diarization (who said what)
+  speaker_diarization: false  # Not yet implemented
+
+  # Language detection
+  auto_detect_language: true
+
+  # Punctuation and formatting
+  enhanced_formatting: true
+
+alignment:
+  # No frame alignment needed
+  strategy: "none"
+
+# Use case examples
+examples:
+  - "Client discovery call"
+  - "Team standup meeting"
+  - "1-on-1 coaching session"
+  - "Interview recording"
+  - "Conference call"
+
+# Expected output characteristics
+expected_output:
+  format: "meeting_notes"
+  sections:
+    - "Summary (3-5 sentences)"
+    - "Key Discussion Points"
+    - "Decisions Made"
+    - "Action Items with Owners"
+    - "Follow-up Questions"
+
+# Output format example
+output_format: |
+  # Meeting Summary
+
+  **Date:** 2026-01-03
+  **Duration:** 45 minutes
+  **Type:** Client Discovery Call
+
+  ## Summary
+  Brief 3-5 sentence overview of the meeting.
+
+  ## Key Discussion Points
+  1. Topic 1
+  2. Topic 2
+
+  ## Decisions Made
+  - Decision 1 (agreed by John)
+  - Decision 2 (pending approval)
+
+  ## Action Items
+  - [ ] Task 1 (Owner: Sarah, Due: 2026-01-10)
+  - [ ] Task 2 (Owner: Mike, Due: 2026-01-15)
+
+  ## Follow-up Questions
+  - Question 1
+  - Question 2
+
+# Special considerations
+notes:
+  - "No slide images in output"
+  - "Q&A pairs focus on discussion topics, not visual content"
+  - "Categories based on conversation themes, not slide topics"
+  - "Anonymization still applied to transcripts"

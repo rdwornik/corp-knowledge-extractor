@@ -21,10 +21,10 @@ tools:
 
 llm:
   # Primary model for synthesis
-  model: "gemini-2.0-flash"
+  model: "gemini-3-flash-preview"
 
   # Tagger model (can be different from synthesis model)
-  tagger_model: "gemini-2.0-flash"
+  tagger_model: "gemini-3-flash-preview"
 
   # Whisper model for transcription
   whisper_model: "medium"

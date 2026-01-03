@@ -235,18 +235,205 @@ Place multiple files in `data/input/` - they will be processed sequentially.
 ### Command Examples
 
 ```bash
-# Standard processing
+# Standard processing (default PowerPoint behavior)
 python scripts/run.py
 
-# With verbose output
-python scripts/run.py --verbose
+# Process specific file
+python scripts/run.py --file "data/input/training.mp4"
 
-# Process specific file (planned)
-python scripts/run.py --file "training.mp4"
-
-# Compress video first (planned)
+# Compress video first
 python scripts/compress_video.py data/input/large-file.mp4
 python scripts/run.py
+```
+
+## Content Type Presets
+
+The extractor supports different content types through **presets** - optimized configurations for different recording scenarios.
+
+### Available Presets
+
+**PowerPoint (default)** - Slide presentations
+```bash
+python scripts/run.py --preset powerpoint
+# or just: python scripts/run.py
+```
+- **Use for:** Training videos, pitch decks, technical presentations
+- **Behavior:** Detects distinct slide transitions (5% pixel change)
+- **Sampling:** Every 1 second
+- **Expected output:** 30-60 frames/hour, 25-50 slides in report
+
+**Excel** - Spreadsheet reviews
+```bash
+python scripts/run.py --preset excel
+```
+- **Use for:** Financial reports, data analysis, dashboard reviews
+- **Behavior:** Sparse sampling to avoid capturing every scroll/cell change
+- **Sampling:** Every 10 seconds, 30% pixel change threshold
+- **Expected output:** 10-20 frames/hour, 8-15 slides in report
+- **Why different:** Scrolling generates many similar frames - aggressive sampling prevents explosion
+
+**Demo** - Software demonstrations
+```bash
+python scripts/run.py --preset demo
+```
+- **Use for:** Feature walkthroughs, UI tutorials, workflow training
+- **Behavior:** Time-based sampling with moderate change detection
+- **Sampling:** Every 15 seconds, 25% pixel change threshold
+- **Expected output:** 15-25 frames/hour, 12-20 slides in report
+- **Why different:** Cursor movement and hover states shouldn't trigger frames
+
+**Audio Only** - Meetings without video
+```bash
+python scripts/run.py --preset audio_only
+```
+- **Use for:** Client calls, phone meetings, interviews
+- **Behavior:** No frame extraction, transcription-only processing
+- **Output:** Meeting notes format with action items and decisions
+- **Expected output:** No slides, conversation-focused Q&A pairs
+
+**Hybrid (Adaptive)** - Mixed content
+```bash
+python scripts/run.py --preset hybrid
+```
+- **Use for:** Meetings that mix PowerPoint, demos, and Excel
+- **Behavior:** Auto-detects content type every 60 seconds and adjusts sampling
+- **Adaptive logic:**
+  - High activity (>5 frames/min) → switches to demo mode
+  - Low activity (<2 frames/min) → switches to powerpoint mode
+- **Expected output:** 20-40 frames/hour, adapts to content
+- **Logging:** Mode switches logged to console for transparency
+
+### Preset Comparison Table
+
+| Preset | Sample Rate | Pixel Threshold | Max per Minute | Best For |
+|--------|-------------|-----------------|----------------|----------|
+| powerpoint | 1s | 5% | 10 | Slide-based presentations |
+| excel | 10s | 30% | 3 | Spreadsheet scrolling |
+| demo | 15s | 25% | 4 | Software demonstrations |
+| audio_only | N/A | N/A | 0 | Voice-only meetings |
+| hybrid | Adaptive | Adaptive | Adaptive | Mixed content |
+
+### Manual Parameter Override
+
+Override specific parameters without using presets:
+
+```bash
+# Custom sample rate and threshold
+python scripts/run.py --sample-rate 5 --pixel-threshold 0.15
+
+# Combine preset with override
+python scripts/run.py --preset demo --sample-rate 20
+```
+
+### Example Scenarios
+
+**Scenario 1: Financial Report Review**
+```bash
+# Video shows presenter scrolling through Excel spreadsheet
+python scripts/run.py --preset excel data/input/q4-review.mp4
+
+# Result: ~12 frames instead of 90+ (avoids capturing every cell selection)
+```
+
+**Scenario 2: Product Feature Demo**
+```bash
+# Live software walkthrough with UI interactions
+python scripts/run.py --preset demo data/input/feature-demo.mp4
+
+# Result: ~20 frames capturing key application states, ignoring cursor moves
+```
+
+**Scenario 3: Mixed Training Session**
+```bash
+# Starts with slides, then switches to live demo, then Q&A
+python scripts/run.py --preset hybrid data/input/full-training.mp4
+
+# Result: Automatically adapts - tight sampling for slides, sparse for demo
+# Logs mode switches:
+#   [01:00] Switching to POWERPOINT mode (low activity)
+#   [15:00] Switching to DEMO mode (high activity)
+#   [45:00] Switching to POWERPOINT mode (low activity)
+```
+
+**Scenario 4: Client Discovery Call**
+```bash
+# Audio-only recording, no screen sharing
+python scripts/run.py --preset audio_only data/input/client-call.m4a
+
+# Result: No frames, focus on action items and decisions
+```
+
+## Report Comparison
+
+Compare two reports to detect quality regressions or improvements.
+
+### Basic Comparison
+
+```bash
+# Compare old and new reports
+python scripts/compare_reports.py output/2025-01-01_1200 output/2025-01-03_1430
+
+# Outputs:
+#   comparison_report.md - Human-readable diff
+#   comparison_metrics.json - Machine-readable metrics
+```
+
+### Comparison Output
+
+**comparison_report.md:**
+- Summary table (frames, slides, Q&A counts, quality metrics)
+- Overall verdict (improved/degraded/mixed/unchanged)
+- Improvements list (e.g., "Longer explanations +20%")
+- Regressions list (e.g., "More junk frames +3")
+- Removed/added slides
+- Changed slide explanations with examples
+
+**comparison_metrics.json:**
+```json
+{
+  "timestamp": "2026-01-03T14:30:00",
+  "frames": {"old_count": 94, "new_count": 87, "change": -7},
+  "slides": {"old_count": 65, "new_count": 58, "removed_titles": [...]},
+  "qa_pairs": {"old_count": 280, "new_count": 310, "change": +30},
+  "quality": {
+    "improvements": ["Longer explanations (+20%)", "Fewer junk frames (-60%)"],
+    "regressions": []
+  },
+  "verdict": {
+    "verdict": "improved",
+    "summary": "Quality has improved - no regressions"
+  }
+}
+```
+
+### CI/CD Integration
+
+Use in continuous integration to prevent quality regressions:
+
+```bash
+# Fail build if regressions detected
+python scripts/compare_reports.py \
+  tests/fixtures/baseline_report \
+  output/latest \
+  --fail-on-regression
+
+# Exit code:
+#   0 = no regressions (or improved)
+#   1 = regressions detected
+```
+
+### Baseline Comparison
+
+```bash
+# Establish baseline
+python scripts/run.py
+cp -r output/latest tests/fixtures/baseline_report
+
+# Later, compare against baseline
+python scripts/run.py  # Process video with updated code/prompts
+python scripts/compare_reports.py \
+  tests/fixtures/baseline_report \
+  output/latest
 ```
 
 ## Output Structure
@@ -286,7 +473,7 @@ Processing statistics:
   "unique_slides": 42,
   "qa_pairs": 156,
   "processing_time_seconds": 245,
-  "llm_model": "gemini-2.0-flash"
+  "llm_model": "gemini-3-flash-preview"
 }
 ```
 

@@ -1,0 +1,76 @@
+# Excel/Spreadsheet Review Preset
+# Optimized for: Scrolling through spreadsheets, cell selection, data review
+# Behavior: Sparse sampling to avoid capturing every scroll/cell change
+
+name: "Excel/Spreadsheet Review"
+description: "Scrolling, cell selection - needs sparse sampling to avoid frame explosion"
+
+frames:
+  enabled: true
+
+  # Sample rate (seconds between frame checks)
+  # 10 = check every 10 seconds (much less frequent than PowerPoint)
+  sample_rate: 10
+
+  # Pixel change threshold (0.0-1.0)
+  # 0.30 = 30% of pixels changed = significant content change
+  # Higher threshold to ignore small scrolls/cell selections
+  pixel_threshold: 0.30
+
+  # Max frames per minute
+  # 3 = ~every 20 seconds maximum
+  max_per_minute: 3
+
+  # Max total frames (lower than PowerPoint)
+  max_total: 150
+
+  # Deduplication settings
+  deduplication:
+    enabled: true
+    # Higher similarity threshold (more aggressive deduplication)
+    # Excel sheets often look very similar
+    similarity_threshold: 0.90
+    pixel_similarity: 0.92
+
+synthesis:
+  # Focus on data insights and speaker explanations
+  focus: "data_analysis"
+
+  # Emphasis on technical details (numbers, formulas, metrics)
+  technical_details_weight: "high"
+
+  # Speaker explanation still important
+  speaker_explanation_weight: "high"
+
+ocr:
+  # OCR confidence threshold (Excel text can be small)
+  min_confidence: 0.5
+
+  # Max text length (Excel can have lots of numbers)
+  max_chars: 800
+
+alignment:
+  # Speech alignment strategy
+  strategy: "timestamp"
+
+  # Min speech length (allow shorter for quick data callouts)
+  min_speech_length: 15
+
+# Use case examples
+examples:
+  - "Financial report walkthrough"
+  - "Data analysis presentation"
+  - "Budget review session"
+  - "Dashboard metrics review"
+
+# Expected output characteristics
+expected_output:
+  frames_per_hour: "10-20"
+  slides_in_report: "8-15"
+  frame_to_slide_ratio: "1.1-1.3"
+
+# Special considerations
+notes:
+  - "Scroll activity generates many similar frames - aggressive sampling needed"
+  - "Cell selection changes don't warrant new frames"
+  - "Focus on distinct sheet changes or significant data sections"

@@ -1,0 +1,125 @@
+# Hybrid (Adaptive) Preset
+# Optimized for: Mixed content - PowerPoint + Demo + Discussion
+# Behavior: Auto-detects content type and switches sampling strategy
+
+name: "Hybrid (Auto-detect)"
+description: "Mix of PowerPoint and Demo - automatically adapts sampling strategy"
+
+frames:
+  enabled: true
+
+  # Adaptive mode - dynamically adjust based on content
+  mode: "adaptive"
+
+  # Analysis window (seconds)
+  # Every 60 seconds, analyze frame activity and adjust strategy
+  analysis_window: 60
+
+  # Initial sampling (before first analysis)
+  initial_sample_rate: 5
+  initial_pixel_threshold: 0.15
+
+  # Adaptive rules
+  adaptive_rules:
+    # High activity threshold (frames per minute)
+    # If > 5 frames/minute in analysis window -> switch to DEMO mode
+    high_activity_threshold: 5
+    high_activity_action: "switch_to_demo"
+
+    # Low activity threshold (frames per minute)
+    # If < 2 frames/minute in analysis window -> switch to POWERPOINT mode
+    low_activity_threshold: 2
+    low_activity_action: "switch_to_powerpoint"
+
+    # Medium activity (2-5 frames/minute) -> stay in current mode
+
+  # Mode configurations
+  modes:
+    powerpoint:
+      sample_rate: 1
+      pixel_threshold: 0.05
+      max_per_minute: 10
+
+    demo:
+      sample_rate: 15
+      pixel_threshold: 0.25
+      max_per_minute: 4
+
+    excel:
+      sample_rate: 10
+      pixel_threshold: 0.30
+      max_per_minute: 3
+
+  # Overall limits (apply to all modes)
+  max_total: 300
+
+  # Deduplication
+  deduplication:
+    enabled: true
+    # Adaptive deduplication based on detected mode
+    similarity_threshold: 0.87
+    pixel_similarity: 0.87
+
+synthesis:
+  # Mixed focus - adapt based on content type detected
+  focus: "adaptive"
+
+  # Balance between educational and demo content
+  speaker_explanation_weight: "high"
+  technical_details_weight: "medium"
+
+ocr:
+  min_confidence: 0.6
+  max_chars: 500
+
+alignment:
+  strategy: "timestamp"
+  min_speech_length: 20
+
+# Activity detection logic
+activity_detection:
+  # How to determine content type from frame activity
+
+  # PowerPoint indicators:
+  # - Large pixel changes (full slide transitions)
+  # - Infrequent changes (presenter talking about one slide)
+  # - Clear visual boundaries
+
+  # Demo indicators:
+  # - Medium pixel changes (UI interactions)
+  # - Moderate frequency (clicking through features)
+  # - Gradual visual changes
+
+  # Excel indicators:
+  # - Small pixel changes (scrolling, cell selection)
+  # - High frequency potential (lots of micro-changes)
+  # - Repetitive visual patterns
+
+# Use case examples
+examples:
+  - "Training that starts with slides, then switches to live demo"
+  - "Mixed presentation with Excel data review and PowerPoint summary"
+  - "Workshop with multiple content types"
+
+# Expected output characteristics
+expected_output:
+  frames_per_hour: "20-40 (varies by content mix)"
+  slides_in_report: "15-35"
+  frame_to_slide_ratio: "1.2-1.5"
+  mode_switches: "2-5 per hour typical"
+
+# Special considerations
+notes:
+  - "Mode switches logged to metadata for transparency"
+  - "First 60 seconds use initial settings before first adaptation"
+  - "Mode persistence: Stay in mode for at least 2 analysis windows before switching"
+  - "Hysteresis prevents rapid mode switching on borderline content"
+
+# Logging output example
+logging:
+  format: |
+    [00:00] Hybrid mode initialized - using initial settings
+    [01:00] Analysis: 8 frames/min -> Switching to DEMO mode
+    [02:00] Analysis: 6 frames/min -> Staying in DEMO mode
+    [05:00] Analysis: 2 frames/min -> Switching to POWERPOINT mode
+    [08:00] Analysis: 1 frame/min -> Staying in POWERPOINT mode

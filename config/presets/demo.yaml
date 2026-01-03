@@ -1,0 +1,79 @@
+# Software Demo Preset
+# Optimized for: Live software demonstrations, UI walkthroughs
+# Behavior: Time-based sampling with moderate change detection
+
+name: "Software Demo"
+description: "Live software demonstration with UI interactions"
+
+frames:
+  enabled: true
+
+  # Sample rate (seconds between frame checks)
+  # 15 = check every 15 seconds baseline
+  sample_rate: 15
+
+  # Pixel change threshold (0.0-1.0)
+  # 0.25 = 25% change to detect significant UI state changes
+  # Medium threshold - catch feature changes, ignore cursor/hover
+  pixel_threshold: 0.25
+
+  # Max frames per minute
+  # 4 = one frame every 15 seconds maximum
+  max_per_minute: 4
+
+  # Max total frames
+  max_total: 200
+
+  # Deduplication settings
+  deduplication:
+    enabled: true
+    # Medium deduplication (UI states can look similar)
+    similarity_threshold: 0.88
+    pixel_similarity: 0.88
+
+synthesis:
+  # Focus on workflow and feature explanations
+  focus: "feature_demo"
+
+  # High emphasis on speaker explanation (what they're doing)
+  speaker_explanation_weight: "very_high"
+
+  # Medium technical details (UI elements, workflows)
+  technical_details_weight: "medium"
+
+ocr:
+  # OCR confidence (UI text can be small/overlapping)
+  min_confidence: 0.5
+
+  # Max text length (UI has less text than slides)
+  max_chars: 400
+
+alignment:
+  # Speech alignment strategy
+  strategy: "timestamp"
+
+  # Min speech length (demo commentary can be brief)
+  min_speech_length: 15
+
+  # Speech range for last frame (demos can have long pauses)
+  last_frame_range: 90
+
+# Use case examples
+examples:
+  - "Product feature walkthrough"
+  - "Software tutorial recording"
+  - "UI/UX demonstration"
+  - "Workflow training session"
+
+# Expected output characteristics
+expected_output:
+  frames_per_hour: "15-25"
+  slides_in_report: "12-20"
+  frame_to_slide_ratio: "1.2-1.4"
+
+# Special considerations
+notes:
+  - "Cursor movement and hover states should not trigger new frames"
+  - "Focus on distinct application states and feature switches"
+  - "Modal dialogs and popups are significant changes"
+  - "Typing/input activity should not create excessive frames"

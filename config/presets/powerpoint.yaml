@@ -1,0 +1,66 @@
+# PowerPoint Presentation Preset
+# Optimized for: Training videos with slide-based presentations
+# Behavior: Detect distinct slide transitions with clear visual changes
+
+name: "PowerPoint Presentation"
+description: "Slides with distinct transitions - current default behavior"
+
+frames:
+  enabled: true
+
+  # Sample rate (seconds between frame checks)
+  # 1 = check every second for slide changes
+  sample_rate: 1
+
+  # Pixel change threshold (0.0-1.0)
+  # 0.05 = 5% of pixels changed = new slide detected
+  pixel_threshold: 0.05
+
+  # Max frames per minute (prevent explosion on animations)
+  max_per_minute: 10
+
+  # Max total frames (hard limit for very long videos)
+  max_total: 300
+
+  # Deduplication settings
+  deduplication:
+    enabled: true
+    # OCR text similarity threshold for duplicate detection
+    # 0.85 = 85% similar text = duplicate slide
+    similarity_threshold: 0.85
+    # Pixel similarity (for visual deduplication)
+    pixel_similarity: 0.85
+
+synthesis:
+  # Focus on extracting educational insights from slides
+  focus: "educational"
+
+  # Emphasis on speaker explanations
+  speaker_explanation_weight: "high"
+
+ocr:
+  # OCR confidence threshold
+  min_confidence: 0.6
+
+  # Max text length to send to LLM
+  max_chars: 500
+
+alignment:
+  # Speech alignment strategy
+  # "timestamp" = map speech to frames by time range
+  strategy: "timestamp"
+
+  # Min speech length to include (characters)
+  min_speech_length: 20
+
+# Use case examples
+examples:
+  - "Product training with 40 slides"
+  - "Technical overview presentation"
+  - "Sales pitch deck walkthrough"
+
+# Expected output characteristics
+expected_output:
+  frames_per_hour: "30-60"
+  slides_in_report: "25-50"
+  frame_to_slide_ratio: "1.2-1.5"
