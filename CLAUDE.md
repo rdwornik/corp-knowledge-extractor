@@ -6,6 +6,73 @@ Python pipeline that extracts structured knowledge from corporate meeting record
 
 **Primary Use Case:** After a meeting, generate educational notes that capture not just what's on slides, but what the speaker EXPLAINED about them - the nuances, context, and insider knowledge.
 
+**Current State:** Optimized for Type A meetings (training videos with slides). Types B and C are on the roadmap.
+
+## Meeting Types
+
+The project is designed to support three types of corporate meetings:
+
+### Type A: Internal Training Sessions (CURRENT FOCUS)
+**Characteristics:**
+- Video recordings with PowerPoint presentations
+- Presenter explaining slides with detailed commentary
+- Educational content (product training, technical overviews)
+- 30-90 minute duration typical
+- Large file sizes (2-4GB common)
+
+**Pipeline Requirements:**
+- Frame extraction (slide detection)
+- OCR (reading slide text)
+- Transcription (what speaker said)
+- Alignment (match speech to slides)
+- Knowledge synthesis (extract insights from speech)
+
+**Output Focus:**
+- Detailed educational reports
+- Q&A pairs for knowledge base
+- Categorized by technical topics
+
+### Type B: Client Meetings (ROADMAP)
+**Characteristics:**
+- Often audio-only (no presentation)
+- Discussion-based, not slide-driven
+- Focus on decisions, action items, concerns
+- Multiple speakers
+- 30-60 minute duration typical
+
+**Pipeline Requirements:**
+- Transcription with speaker diarization
+- Action item detection
+- Decision tracking
+- Sentiment analysis
+- No frame extraction needed
+
+**Output Focus:**
+- Meeting summary
+- Action items with owners
+- Client concerns/requests
+- Follow-up tasks
+
+### Type C: Internal Updates (ROADMAP)
+**Characteristics:**
+- Mix of formats (video, audio, shared documents)
+- Status updates, roadmap reviews
+- Cross-functional impact
+- What changed, what's new
+- Variable duration
+
+**Pipeline Requirements:**
+- Multi-format ingestion (video, audio, PDF, DOCX)
+- Change detection
+- Impact analysis
+- Task extraction
+
+**Output Focus:**
+- Change summary
+- Impact by team/function
+- Action items
+- Timeline/roadmap updates
+
 ## Tech Stack
 
 - **Transcription:** Whisper via Groq API (fast, cheap)
@@ -249,13 +316,81 @@ Per 50-minute meeting:
 - Gemini API (tagging + synthesis): ~$0.01
 - **Total: ~$0.01-0.02**
 
+## Testing & Quality Assurance
+
+### Automated Quality Checks
+The `tests/test_quality.py` module provides automated report quality validation:
+
+**check_speaker_explanation_quality():**
+- Ensures speaker_explanation field is populated
+- Detects raw transcript dumps (red flag)
+- Validates educational value extraction
+- Min length threshold: 30 chars (configurable)
+
+**check_no_junk_frames():**
+- Verifies junk filter patterns work
+- Detects "loading", "thank you", generic slides
+- Ensures only valuable content in report
+
+**check_categories_balanced():**
+- Prevents everything dumping into "general"
+- Validates categorization keywords working
+- Reports category distribution
+
+**check_qa_pairs_quality():**
+- Validates Q&A format (question/answer fields)
+- Checks for specificity (not generic)
+- Ensures category tagging
+- Verifies source frame references
+
+### Manual Review Checklist
+Before deploying updated prompts or configs:
+1. Process sample training video (known good baseline)
+2. Run automated quality tests
+3. Manual spot-check:
+   - Do frame images match descriptions?
+   - Are speaker explanations detailed (not summaries)?
+   - Are technical details specific (not generic)?
+   - Is PII properly anonymized?
+4. Compare metrics to baseline (frames, Q&A count, categories)
+5. Git commit with test results in message
+
+### Known Quality Issues
+1. **Duplicate slides:** OCR similarity can create near-duplicates
+   - Mitigation: Post-processor deduplication
+   - Tuning: `processing.yaml` dedup_similarity threshold
+
+2. **Generic explanations:** LLM sometimes summarizes instead of extracting
+   - Mitigation: Prompt emphasizes "what speaker SAID"
+   - Detection: Automated quality check flags short/generic text
+
+3. **Frame numbering mismatch:** Rare bug where images don't match text
+   - Root cause: Sorting inconsistency between synthesizer and generator
+   - Both must sort frames by timestamp before ID assignment
+   - Detection: Manual verification during spot checks
+
 ## Future Improvements
 
-1. **Prompt optimization:** Better extraction of speaker insights
-2. **Duplicate detection:** Smarter merging of similar slides
-3. **Multi-language support:** Non-English meetings
-4. **Incremental processing:** Track processed files, skip re-runs
-5. **Web UI:** Upload video, download report
+1. **Multi-input support (Type B/C meetings):**
+   - Audio-only processing (skip frame extraction)
+   - Document ingestion (PDF, DOCX, XLSX)
+   - Auto-detect meeting type
+
+2. **Quality improvements:**
+   - Prompt optimization for better insight extraction
+   - Smarter duplicate detection (semantic, not just OCR)
+   - A/B testing framework for prompt changes
+
+3. **Operational:**
+   - Video compression before processing (4GB → 500MB)
+   - Incremental processing (skip already-processed files)
+   - CI/CD with automated quality gates
+
+4. **Features:**
+   - Multi-language support (non-English meetings)
+   - Speaker diarization (who said what)
+   - Web UI (upload video, download report)
+   - Batch processing dashboard
 
 ## Git
 

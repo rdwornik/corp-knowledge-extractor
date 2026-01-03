@@ -1,0 +1,84 @@
+{
+  "slide_breakdown": [
+    {
+      "frame_id": "001",
+      "title": "Platform Overview",
+      "visual_content": "Architecture diagram showing microservices on Azure cloud",
+      "technical_details": "Azure Kubernetes Service (AKS), Redis Cache, PostgreSQL 14",
+      "speaker_explanation": "Our platform runs entirely on Azure using a microservices architecture. We chose AKS for container orchestration because it provides auto-scaling and integrates well with Azure Monitor. The Redis layer handles session state and caching, which reduced our API response times by 60%. PostgreSQL 14 was selected for its JSON support and robust replication features.",
+      "context_relationships": "This architecture supports the SLA guarantees discussed in frame 003. The Redis caching strategy directly impacts the performance metrics shown in frame 008.",
+      "key_terminology": [
+        "AKS - Azure Kubernetes Service for container orchestration",
+        "Redis - In-memory data store for caching",
+        "Microservices - Independently deployable service components"
+      ],
+      "category": "infrastructure"
+    },
+    {
+      "frame_id": "002",
+      "title": "Disaster Recovery Strategy",
+      "visual_content": "Timeline showing RTO and RPO targets with backup schedule",
+      "technical_details": "RTO: 4 hours, RPO: 15 minutes, Hot standby in West Europe region",
+      "speaker_explanation": "We maintain a hot standby in West Europe for disaster recovery. The RTO of 4 hours means if East US goes down, we can failover within 4 hours. RPO of 15 minutes means we might lose up to 15 minutes of data in a catastrophic failure. We do continuous replication every 5 minutes, so actual data loss would likely be less. The hot standby costs about 30% extra but gives us much better recovery times than cold standby.",
+      "context_relationships": "This DR strategy is part of our 99.9% uptime SLA commitment. Related to the backup policies in frame 005.",
+      "key_terminology": [
+        "RTO - Recovery Time Objective, maximum acceptable downtime",
+        "RPO - Recovery Point Objective, maximum acceptable data loss",
+        "Hot Standby - Fully running backup environment"
+      ],
+      "category": "sla"
+    },
+    {
+      "frame_id": "003",
+      "title": "REST API Design Principles",
+      "visual_content": "Code snippets showing API endpoint structure and authentication flow",
+      "technical_details": "RESTful JSON API, OAuth 2.0 authentication, Rate limit: 1000 requests/minute",
+      "speaker_explanation": "Our API follows REST principles with clear resource naming. Every endpoint requires OAuth 2.0 bearer token. We implemented rate limiting at 1000 requests per minute per client to prevent abuse and ensure fair usage. If you exceed the limit, you get a 429 status code with a Retry-After header. The API versioning is done via URL path like /v2/orders rather than headers, which makes it easier for clients to understand which version they're calling.",
+      "context_relationships": "These API principles support the integration scenarios covered in frames 010-012. The rate limiting complements our infrastructure auto-scaling discussed in frame 001.",
+      "key_terminology": [
+        "OAuth 2.0 - Industry standard authorization protocol",
+        "Rate Limiting - Throttling mechanism to prevent API abuse",
+        "429 Status Code - HTTP status for too many requests"
+      ],
+      "category": "api"
+    }
+  ],
+  "qa_pairs": [
+    {
+      "question": "What is the RTO for disaster recovery?",
+      "answer": "4 hours with hot standby in West Europe region",
+      "category": "sla",
+      "source": "frame_002"
+    },
+    {
+      "question": "Why was Redis chosen for caching?",
+      "answer": "Redis reduced API response times by 60% and handles session state efficiently",
+      "category": "infrastructure",
+      "source": "frame_001"
+    },
+    {
+      "question": "What is the API rate limit per client?",
+      "answer": "1000 requests per minute, returns 429 status code when exceeded",
+      "category": "api",
+      "source": "frame_003"
+    },
+    {
+      "question": "Which Azure regions are used for the platform?",
+      "answer": "Primary in East US with hot standby in West Europe",
+      "category": "infrastructure",
+      "source": "frame_001"
+    },
+    {
+      "question": "What authentication method does the API use?",
+      "answer": "OAuth 2.0 bearer token authentication",
+      "category": "api",
+      "source": "frame_003"
+    },
+    {
+      "question": "What is the RPO for disaster recovery?",
+      "answer": "15 minutes with continuous replication every 5 minutes",
+      "category": "sla",
+      "source": "frame_002"
+    }
+  ]
+}
