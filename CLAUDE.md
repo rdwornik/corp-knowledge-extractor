@@ -1152,7 +1152,9 @@ python scripts/run.py --file 5_hour_training.mp4
 | Provider | Cost | Speed | File Size Limit | Rate Limits | Best For |
 |----------|------|-------|-----------------|-------------|----------|
 | **Groq** | FREE | ~0.5x realtime | 25MB | 7200s/hour | Short meetings (<1h 40min) |
-| **OpenAI** | $0.006/min | ~10x realtime | None | Generous | Long meetings, production |
+| **OpenAI** | $0.006/min | ~10x realtime | 25MB* | Generous | Long meetings, production |
+
+*Both providers automatically use chunking for files > 25MB
 
 **Groq Advantages:**
 - Completely free
@@ -1160,19 +1162,20 @@ python scripts/run.py --file 5_hour_training.mp4
 - Fast for short files
 
 **Groq Disadvantages:**
-- 25MB file size limit (requires chunking)
+- 25MB file size limit per request (auto-chunking enabled)
 - 7200s/hour rate limit
 - Long waits for large files (multiple sessions)
 
 **OpenAI Advantages:**
-- No file size limits
-- 10x faster processing
-- No practical rate limits
-- Handles large files directly
+- 10x faster processing than Groq
+- No hourly rate limits (duration-based only)
+- Auto-chunking handles large files seamlessly
+- More reliable for production use
 
 **OpenAI Disadvantages:**
 - Costs $0.006/minute of audio
 - Requires API billing setup
+- 25MB file size limit per request (auto-chunking enabled)
 
 ### Cost Examples
 
