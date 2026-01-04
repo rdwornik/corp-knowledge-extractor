@@ -68,8 +68,8 @@ transcription:
     # Cost per minute of audio ($0.006/min as of 2025)
     cost_per_minute: 0.006
 
-    # No file size limit for OpenAI
-    max_file_size_mb: null
+    # OpenAI also has 25MB limit - uses same chunking as Groq
+    max_file_size_mb: 25
 
   # Retry settings for both providers
   retry:
