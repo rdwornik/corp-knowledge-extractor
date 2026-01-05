@@ -91,13 +91,14 @@ def _transcribe_chunk(
         )
 
     # Parse segments
+    # Note: OpenAI returns Pydantic objects, not dicts - use attributes directly
     segments = []
     if hasattr(transcription, 'segments') and transcription.segments:
         for seg in transcription.segments:
             segments.append({
-                "start": seg.get("start", 0),
-                "end": seg.get("end", 0),
-                "text": seg.get("text", "").strip()
+                "start": seg.start,
+                "end": seg.end,
+                "text": seg.text.strip()
             })
     else:
         # Fallback: if no segments, create one segment with full text
