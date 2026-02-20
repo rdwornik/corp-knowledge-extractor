@@ -75,74 +75,74 @@ The project is designed to support three types of corporate meetings:
 
 ## Tech Stack
 
-- **Transcription:** Whisper via Groq API (fast, cheap)
-- **Frame Extraction:** OpenCV with pixel-based change detection
-- **OCR:** Tesseract (local)
-- **Semantic Tagging:** Gemini Flash API (batch processing)
-- **Knowledge Synthesis:** Gemini Flash API (chunked processing)
-- **Anonymization:** spaCy NER + custom terms
-- **Output:** Markdown report + JSONL Q&A pairs
+- **Frame Extraction:** OpenCV with pixel-based change detection (`src/frames/extractor.py`)
+- **Knowledge Extraction:** Gemini API — receives video file + frame images in one request
+- **Compression:** FFmpeg (reduces video size before upload)
+- **Anonymization:** Custom terms injected into Gemini prompt
+- **Output:** Markdown package with YAML frontmatter (Obsidian Dataview compatible)
+
+> **Architecture note:** Frame extraction (OpenCV) is NOT replaced by Gemini.
+> OpenCV detects slide transitions and produces frame screenshots.
+> Gemini then receives both the video AND the frame images in a single API call,
+> allowing it to produce per-slide analysis (slide_title + speaker_explanation + key_points)
+> grounded in visual evidence.
 
 ## Project Structure
 
 ```
 corporate-knowledge-extractor/
 ├── config/
-│   ├── prompts/
-│   │   └── knowledge_extraction.txt    # LLM prompt template
-│   ├── settings.yaml                   # Main configuration
-│   ├── processing.yaml                 # Frame/alignment settings
-│   ├── anonymization.yaml              # Redaction terms
-│   ├── categories.yaml                 # Report categories
-│   ├── filters.yaml                    # Junk/filler patterns
-│   └── config_loader.py                # Config loading utility
+│   ├── settings.yaml                   # Main config (gemini, compression, prompts, file_types)
+│   ├── processing.yaml                 # Frame extraction + deduplication settings
+│   ├── anonymize.yaml                  # Custom redaction terms
+│   ├── categories.yaml                 # Categorization rules
+│   ├── filters.yaml                    # Junk patterns
+│   └── config_loader.py                # load_config(), get_prompt(), get_file_types()
 ├── src/
-│   ├── transcribe/
-│   │   └── groq_backend.py             # Whisper transcription
+│   ├── inventory.py                    # Scan + classify input files
+│   ├── compress.py                     # FFmpeg video compression
 │   ├── frames/
-│   │   ├── extractor.py                # Frame extraction + deduplication
-│   │   └── tagger.py                   # Semantic tagging via LLM
-│   ├── ocr/
-│   │   └── reader.py                   # Tesseract OCR
-│   ├── align/
-│   │   └── aligner.py                  # Speech-to-frame alignment
-│   ├── anonymize/
-│   │   └── anonymizer.py               # PII redaction
-│   ├── synthesize/
-│   │   ├── base.py                     # Base synthesizer class
-│   │   └── gemini_backend.py           # Gemini API integration
-│   └── output/
-│       ├── generator.py                # Markdown/JSONL generation
-│       └── post_processor.py           # Deduplication, categorization
+│   │   └── extractor.py                # OpenCV pixel-based frame extraction
+│   ├── extract.py                      # Gemini extraction (video+frames or standalone)
+│   ├── correlate.py                    # Group related files
+│   ├── synthesize.py                   # Build output package (Jinja2 templates)
+│   └── reextract.py                    # Re-run extraction on existing package
+├── templates/
+│   ├── index.md.j2                     # Package index (Obsidian frontmatter)
+│   ├── extract.md.j2                   # Per-file extract (slides with images)
+│   └── meta.yaml.j2                    # Extraction metadata
 ├── scripts/
-│   └── run.py                          # Main entry point
-├── data/
-│   └── input/                          # Place video files here
-└── output/                             # Generated reports
+│   ├── run.py                          # Main entry point (Click CLI)
+│   └── compress_video.py               # Standalone compression utility
+├── tests/
+│   ├── test_inventory.py               # File classification + scan tests
+│   └── test_correlate.py               # File grouping tests
+└── output/                             # Generated packages
 ```
 
 ## Pipeline Flow
 
 ```
-Video File
+Input (file or folder)
     ↓
-[1] transcribe_groq() → segments[] {start, end, text}
+[1] scan_input()           → list[SourceFile]   (inventory.py)
     ↓
-[2] extract_frames() → frames[] {timestamp, path}
+[2] compress_video()       → compressed video   (compress.py, videos only)
     ↓
-[3] read_frames() → frames[] + {text} (OCR)
+[3] extract_frames()       → list[Path]         (frames/extractor.py, videos only)
+                             OpenCV pixel-based change detection → frame_001.png, frame_002.png...
     ↓
-[4] tag_frames() → frames[] + {tags} (semantic)
+[4] extract_knowledge()    → ExtractionResult   (extract.py, Gemini API)
+                             VIDEO: upload video + send frame images → per-slide analysis
+                             OTHER: inline content → general extraction
     ↓
-[5] align() → aligned[] {start, end, speech, slide_text, frame_idx}
+[5] correlate_files()      → list[FileGroup]    (correlate.py)
     ↓
-[6] anonymize() → redacted aligned[] and frames[]
-    ↓
-[7] synthesize() → {slide_breakdown[], qa_pairs[]}
-    ↓
-[8] post_process() → deduplicated, categorized synthesis
-    ↓
-[9] generate_output() → report.md + knowledge.jsonl
+[6] build_package()        → package dir        (synthesize.py, Jinja2 templates)
+    │
+    ├── source/frames/     ← frame PNGs from step 3
+    ├── extract/*.md       ← per-file knowledge (slides with images for videos)
+    └── index.md           ← Obsidian Dataview frontmatter
 ```
 
 ## Critical Architecture Decisions

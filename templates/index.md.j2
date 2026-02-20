@@ -1,0 +1,62 @@
+---
+id: "{{ id }}"
+title: "{{ title }}"
+date: {{ date }}
+types: {{ types | tojson }}
+topics: {{ topics | tojson }}
+people: {{ people | tojson }}
+products: {{ products | tojson }}
+file_count: {{ file_count }}
+model: "{{ model }}"
+---
+
+# {{ title }}
+
+{{ executive_summary }}
+
+## Contents
+
+{% for group in groups %}
+### {{ group.group_name }}
+
+- **Primary:** `{{ group.primary.name }}` ({{ group.primary.type.value }})
+{% if group.related %}
+- **Related:**
+{% for r in group.related %}  - `{{ r.name }}` ({{ r.type.value }})
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+
+## Key Takeaways
+
+{% for point in key_takeaways %}- {{ point }}
+{% endfor %}
+
+{% if all_people %}
+## People Mentioned
+
+{% for person in all_people %}- {{ person }}
+{% endfor %}
+{% endif %}
+
+{% if all_products %}
+## Products & Systems
+
+{% for product in all_products %}- {{ product }}
+{% endfor %}
+{% endif %}
+
+{% if action_items %}
+## Action Items
+
+{% for item in action_items %}- {{ item }}
+{% endfor %}
+{% endif %}
+
+{% if open_questions %}
+## Open Questions
+
+{% for q in open_questions %}- {{ q }}
+{% endfor %}
+{% endif %}
