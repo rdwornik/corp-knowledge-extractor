@@ -1,0 +1,77 @@
+---
+source: "{{ source_path }}"
+type: "{{ file_type }}"
+title: "{{ title }}"
+topics: {{ topics | tojson }}
+people: {{ people | tojson }}
+products: {{ products | tojson }}
+content_type: "{{ content_type }}"
+language: "{{ language }}"
+quality: "{{ quality }}"
+{% if duration_min %}duration_min: {{ duration_min }}
+{% endif %}tokens_used: {{ tokens_used }}
+---
+
+# {{ title }}
+
+## Summary
+
+{{ summary }}
+
+## Key Points
+
+{% for point in key_points %}- {{ point }}
+{% endfor %}
+
+{% if slides %}
+## Slides
+
+{% for slide in slides %}
+### Slide {{ slide.slide_number }}{% if slide.slide_title %}: {{ slide.slide_title }}{% endif %}
+
+{% if slide.timestamp_approx %}*Timestamp: {{ slide.timestamp_approx }}*
+
+{% endif %}
+![Slide {{ slide.slide_number }}](../source/frames/frame_{{ "%03d" % slide.slide_number }}.png)
+
+**On the slide:** {{ slide.slide_content }}
+
+**Speaker explained:** {{ slide.speaker_explanation }}
+
+{% if slide.key_points %}
+**Key points:**
+{% for point in slide.key_points %}
+- {{ point }}
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% else %}
+
+{% if topics %}
+## Topics
+
+{% for topic in topics %}- {{ topic }}
+{% endfor %}
+{% endif %}
+
+{% if people %}
+## People Mentioned
+
+{% for person in people %}- {{ person }}
+{% endfor %}
+{% endif %}
+
+{% if products %}
+## Products & Systems
+
+{% for product in products %}- {{ product }}
+{% endfor %}
+{% endif %}
+
+{% if transcript_excerpt %}
+## Transcript Excerpt
+
+{{ transcript_excerpt }}
+{% endif %}
+{% endif %}

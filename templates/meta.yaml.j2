@@ -1,0 +1,10 @@
+extracted_at: "{{ extracted_at }}"
+model: "{{ model }}"
+pipeline_version: "{{ pipeline_version }}"
+prompt_hash: "{{ prompt_hash }}"
+source_files:
+{% for f in source_files %}
+  - path: "{{ f.path }}"
+    type: "{{ f.type }}"
+    size_bytes: {{ f.size_bytes }}
+{% endfor %}

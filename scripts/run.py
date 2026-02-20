@@ -1,270 +1,240 @@
-import sys
+"""
+Corporate Knowledge Extractor - main entry point.
+
+Pipeline:
+    inventory → compress → frame_extract (videos) → extract (Gemini) → correlate → synthesize
+
+Commands:
+    process    Process a file or folder (new package)
+    reextract  Re-run extraction on existing package
+    info       Show package info
+"""
+
+import logging
 import os
-import argparse
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import sys
+from pathlib import Path
 
-from config.config_loader import get, get_path
-from src.transcribe.groq_backend import transcribe_groq
-from src.transcribe.openai_backend import transcribe_openai, transcribe_openai_with_preprocessing
-from src.transcribe.provider_selector import (
-    select_provider,
-    estimate_transcription,
-    print_estimate,
-    validate_provider_selection
-)
+# Ensure project root is on path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import click
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from config.config_loader import load_config
+from src.inventory import scan_input, FileType
+from src.extract import extract_knowledge, ExtractionError
+from src.correlate import correlate_files
+from src.synthesize import build_package
+from src.reextract import reextract_package
 from src.frames.extractor import extract_frames
-from src.ocr.reader import read_frames
-from src.frames.tagger import tag_frames
-from src.align.aligner import align
-from src.anonymize.anonymizer import anonymize
-from src.synthesize.gemini_backend import GeminiSynthesizer
-from src.output.post_processor import post_process
-from src.output.generator import generate_output
+from src.compress import compress_video, needs_compression
 
-# Load configuration
-INPUT_DIR = get_path("settings", "input.directory")
-CUSTOM_TERMS = get("anonymize", "custom_terms", [])
-VIDEO_EXTENSIONS = tuple(get("settings", "input.video_extensions", [".mp4", ".mkv", ".avi", ".mov"]))
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger(__name__)
+
+# Rich output (optional)
+try:
+    from rich.console import Console
+    console = Console()
+    HAS_RICH = True
+except ImportError:
+    HAS_RICH = False
+    console = None
 
 
-def process_file(
-    file_path: str,
-    preset: str = None,
-    sample_rate: int = None,
-    pixel_threshold: float = None,
-    provider: str = "auto",
-    estimate_only: bool = False
-):
+def _print(msg: str) -> None:
+    if HAS_RICH:
+        console.print(msg)
+    else:
+        print(msg)
+
+
+@click.group()
+def cli():
+    """Corporate Knowledge Extractor — API-first pipeline."""
+    pass
+
+
+@cli.command()
+@click.argument("input_path", type=click.Path(exists=True))
+@click.option("--output", default="output", show_default=True, help="Output directory")
+@click.option("--name", default=None, help="Package name (defaults to input name)")
+def process(input_path: str, output: str, name: str | None):
+    """Process a file or folder into a knowledge package.
+
+    Pipeline: inventory → compress → frame_extract → extract (Gemini) → correlate → synthesize
     """
-    Process a video file with optional preset configuration.
+    config = load_config()
+    input_p = Path(input_path)
+    output_p = Path(output)
+    package_name = name or input_p.stem or "package"
 
-    Args:
-        file_path: Path to video file
-        preset: Preset name (powerpoint, excel, demo, audio_only, hybrid)
-        sample_rate: Override sample rate
-        pixel_threshold: Override pixel threshold
-        provider: Transcription provider ("auto", "groq", "openai")
-        estimate_only: Only show cost estimate, don't process
-    """
-    name = os.path.basename(file_path)
-    print(f"\n{'='*50}")
-    print(f"Processing: {name}")
-    print('='*50)
+    # Pre-compute frames directory (inside the package, before it's built)
+    frames_dir = output_p / package_name / "source" / "frames"
 
-    # Step 0: Provider selection and cost estimation
-    print("\nStep 0: Analyzing file and selecting transcription provider...")
+    _print(f"\n[bold]Corporate Knowledge Extractor[/bold]" if HAS_RICH else "\nCorporate Knowledge Extractor")
+    _print(f"Input:   {input_p}")
+    _print(f"Output:  {output_p / package_name}")
+    _print("")
 
-    if provider == "auto":
-        # Automatic selection based on file analysis
-        selected_provider = select_provider(file_path, show_estimate=True)
-    else:
-        # Manual provider selection - still show estimate
-        estimate = estimate_transcription(file_path)
-        print_estimate(estimate, file_path)
-
-        # Override with user selection
-        selected_provider = provider
-        print(f"\n⚙️  User override: Using {selected_provider.upper()}")
-
-    # Validate API key is available
-    validate_provider_selection(selected_provider)
-
-    # If estimate-only mode, stop here
-    if estimate_only:
-        print("\n✓ Estimate complete (--estimate-only mode)")
-        return
-
-    # Step 1: Transcription
-    print(f"\nStep 1: Transcribing with {selected_provider.upper()}...")
-
-    if selected_provider == "groq":
-        t = transcribe_groq(file_path)
-    elif selected_provider == "openai":
-        # Use OpenAI with preprocessing to reduce costs
-        use_preprocessing = get("settings", "transcription.silence_removal.enabled", True)
-        t = transcribe_openai_with_preprocessing(
-            file_path,
-            enable_preprocessing=use_preprocessing
-        )
-    else:
-        raise ValueError(f"Unknown provider: {selected_provider}")
-
-    print(f"  ✓ {len(t)} segments transcribed")
-
-    print("Step 2: Extracting frames...")
-    f = extract_frames(
-        file_path,
-        preset=preset,
-        sample_rate=sample_rate,
-        threshold=pixel_threshold
-    )
-    print(f"  {len(f)} frames")
-
-    # If no frames (audio-only mode), skip frame-dependent steps
-    if len(f) == 0:
-        print("  No frames extracted (audio-only mode)")
-        print("Step 3-4: Skipping OCR and tagging (no frames)")
-        print("Step 5: Skipping alignment (no frames)")
-        print("Step 6: Anonymizing transcript...")
-
-        # Anonymize transcript segments
-        for segment in t:
-            segment['text'] = anonymize(segment['text'], CUSTOM_TERMS)
-
-        print("Step 7: Synthesizing with Gemini (audio-only mode)...")
-        synth = GeminiSynthesizer()
-        # TODO: Implement audio-only synthesis mode
-        # For now, use regular synthesis with empty frames
-        result = synth.synthesize([], t)
-
-        print("Step 8: Post-processing...")
-        result = post_process(result, [])
-
-        print("Step 9: Generating output...")
-        folder = generate_output(result, [])
-        print(f"Done! Output: {folder}")
-        return
-
-    print("Step 3: OCR...")
-    f = read_frames(f)
-
-    print("Step 4: Tagging frames...")
-    f = tag_frames(f)
-
-    print("Step 5: Aligning...")
-    aligned = align(t, f)
-
-    print("Step 6: Anonymizing...")
-    for item in aligned:
-        item['speech'] = anonymize(item['speech'], CUSTOM_TERMS)
-        item['slide_text'] = anonymize(item['slide_text'], CUSTOM_TERMS)
-
-    for frame in f:
-        frame['text'] = anonymize(frame.get('text', ''), CUSTOM_TERMS)
-
-    print("Step 7: Synthesizing with Gemini...")
-    synth = GeminiSynthesizer()
-    result = synth.synthesize(f, aligned)
-
-    print("Step 8: Post-processing (dedup, categorize)...")
-    result = post_process(result, f)
-    print(f"  {len(result['slide_breakdown'])} unique slides, {len(result['qa_pairs'])} Q&A pairs")
-
-    print("Step 9: Generating output...")
-    folder = generate_output(result, f)
-    print(f"Done! Output: {folder}")
-
-
-def main():
-    """Main entry point with argument parsing."""
-    parser = argparse.ArgumentParser(
-        description="Extract knowledge from corporate meeting recordings",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Preset Examples:
-  python scripts/run.py                          # Default (PowerPoint preset)
-  python scripts/run.py --preset excel           # Excel spreadsheet review
-  python scripts/run.py --preset demo            # Software demonstration
-  python scripts/run.py --preset audio_only      # Audio-only meeting
-  python scripts/run.py --preset hybrid          # Auto-adaptive mode
-
-Manual Override:
-  python scripts/run.py --sample-rate 10 --pixel-threshold 0.25
-
-Available Presets:
-  powerpoint   - Slide presentations with distinct transitions (default)
-  excel        - Spreadsheet reviews with scrolling
-  demo         - Software demonstrations
-  audio_only   - Audio-only meetings (no frames)
-  hybrid       - Auto-adaptive (switches between modes)
-        """
-    )
-
-    parser.add_argument(
-        "--preset",
-        choices=["powerpoint", "excel", "demo", "audio_only", "hybrid"],
-        default=None,
-        help="Content type preset (default: powerpoint behavior from config)"
-    )
-
-    parser.add_argument(
-        "--sample-rate",
-        type=int,
-        default=None,
-        help="Seconds between frame checks (overrides preset)"
-    )
-
-    parser.add_argument(
-        "--pixel-threshold",
-        type=float,
-        default=None,
-        help="Pixel change threshold 0.0-1.0 (overrides preset)"
-    )
-
-    parser.add_argument(
-        "--file",
-        type=str,
-        default=None,
-        help="Process specific file instead of all files in input directory"
-    )
-
-    parser.add_argument(
-        "--provider",
-        choices=["auto", "groq", "openai"],
-        default="auto",
-        help="Transcription provider (default: auto-select based on file size and cost)"
-    )
-
-    parser.add_argument(
-        "--estimate-only",
-        action="store_true",
-        help="Show transcription cost estimate without processing"
-    )
-
-    args = parser.parse_args()
-
-    # Determine files to process
-    if args.file:
-        if not os.path.exists(args.file):
-            print(f"Error: File not found: {args.file}")
-            return
-        files = [args.file]
-    else:
-        files = [
-            os.path.join(INPUT_DIR, f)
-            for f in os.listdir(INPUT_DIR)
-            if f.lower().endswith(VIDEO_EXTENSIONS)
-        ]
-
+    # --- 1. Scan ---
+    _print("Scanning input files...")
+    files = scan_input(input_p, config)
     if not files:
-        print(f"No video files in {INPUT_DIR}/")
-        return
+        _print("[red]No supported files found.[/red]" if HAS_RICH else "No supported files found.")
+        sys.exit(1)
 
-    # Show configuration
-    print("="*60)
-    print("CORPORATE KNOWLEDGE EXTRACTOR")
-    print("="*60)
-    if args.preset:
-        print(f"Preset: {args.preset}")
-    if args.sample_rate:
-        print(f"Sample rate override: {args.sample_rate}s")
-    if args.pixel_threshold:
-        print(f"Pixel threshold override: {args.pixel_threshold}")
-    print(f"Files to process: {len(files)}")
-    print("="*60)
+    _print(f"Found {len(files)} file(s):")
+    for f in files:
+        size_mb = f.size_bytes / (1024 * 1024)
+        _print(f"  {f.type.value:12s}  {f.path.name}  ({size_mb:.1f} MB)")
 
-    for file_path in files:
-        process_file(
-            file_path,
-            preset=args.preset,
-            sample_rate=args.sample_rate,
-            pixel_threshold=args.pixel_threshold,
-            provider=args.provider,
-            estimate_only=args.estimate_only
-        )
+    # --- 2. Compress videos if needed ---
+    compressed_paths: dict[str, Path] = {}  # stem → compressed path
+    for f in files:
+        if f.type == FileType.VIDEO:
+            if needs_compression(f.path, config):
+                compressed_out = output_p / package_name / "source" / "video" / f.path.name
+                _print(f"\nCompressing {f.path.name}...")
+                result_path = compress_video(f.path, compressed_out, config)
+                compressed_paths[f.name] = result_path
+            else:
+                skip_mb = config.get("compression", {}).get("skip_if_under_mb", 50)
+                size_mb = f.size_bytes / (1024 * 1024)
+                _print(f"Skipping compression: {f.path.name} is {size_mb:.0f}MB (threshold: {skip_mb}MB)")
 
-    print("\n✓ All done!")
+    # --- 3. Extract frames from videos ---
+    frame_results: dict[str, list[Path]] = {}  # stem → list[Path]
+    for f in files:
+        if f.type == FileType.VIDEO:
+            _print(f"\nExtracting frames from {f.path.name}...")
+            try:
+                frames = extract_frames(f.path, frames_dir, config)
+                if frames:
+                    frame_results[f.name] = frames
+                    _print(f"  → {len(frames)} slide frames extracted")
+                else:
+                    _print(f"  → No frames extracted")
+            except Exception as exc:
+                log.warning("Frame extraction failed for %s: %s", f.path.name, exc)
+                _print(f"  → Frame extraction failed: {exc}")
+
+    # --- 4. Extract knowledge via Gemini ---
+    _print("\nExtracting knowledge with Gemini...")
+    extracts: dict = {}
+    failed: list[str] = []
+
+    for f in files:
+        frames = frame_results.get(f.name)  # None for non-video files
+        frame_count = len(frames) if frames else 0
+        label = f"{f.path.name}" + (f" + {frame_count} frames" if frame_count else "")
+        _print(f"  → {label}")
+        try:
+            result = extract_knowledge(f, config, frames=frames)
+            extracts[f.name] = result
+            slide_info = f" | {len(result.slides)} slides" if result.slides else ""
+            _print(f"    ✓ {result.title}{slide_info}")
+        except ExtractionError as exc:
+            log.warning("Skipping %s: %s", f.path.name, exc)
+            failed.append(f.path.name)
+            _print(f"    ✗ Failed: {exc}")
+
+    if not extracts:
+        _print("[red]No files were successfully extracted.[/red]" if HAS_RICH
+               else "No files were successfully extracted.")
+        sys.exit(1)
+
+    if failed:
+        _print(f"\n[yellow]Warning: {len(failed)} file(s) failed extraction.[/yellow]" if HAS_RICH
+               else f"\nWarning: {len(failed)} file(s) failed extraction.")
+
+    # --- 5. Correlate ---
+    _print("\nGrouping related files...")
+    groups = correlate_files(files, extracts)
+    _print(f"  {len(groups)} group(s)")
+
+    # --- 6. Build package ---
+    _print("\nBuilding package...")
+    pkg_path = build_package(groups, extracts, output_p, package_name, config)
+
+    _print(f"\n[green]✓ Done![/green]" if HAS_RICH else "\n✓ Done!")
+    _print(f"Package: {pkg_path}")
+
+
+@cli.command()
+@click.argument("package_path", type=click.Path(exists=True))
+def reextract(package_path: str):
+    """Re-run extraction on an existing package (source/ is preserved)."""
+    config = load_config()
+    pkg = Path(package_path)
+
+    _print(f"\nRe-extracting package: {pkg}")
+    _print("Note: source/ is immutable — only extract/ will be regenerated.\n")
+
+    try:
+        reextract_package(pkg, config)
+        _print(f"\n[green]✓ Re-extraction complete.[/green]" if HAS_RICH else "\n✓ Re-extraction complete.")
+        _print(f"Package: {pkg}")
+    except Exception as exc:
+        _print(f"[red]✗ Error: {exc}[/red]" if HAS_RICH else f"✗ Error: {exc}")
+        log.exception("Re-extraction failed")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("package_path", type=click.Path(exists=True))
+def info(package_path: str):
+    """Show info about an existing knowledge package."""
+    import yaml
+
+    pkg = Path(package_path)
+    meta_path = pkg / "extract" / "_meta.yaml"
+
+    _print(f"\nPackage: {pkg.name}")
+    _print(f"Path:    {pkg}\n")
+
+    if meta_path.exists():
+        with open(meta_path, encoding="utf-8") as f:
+            meta = yaml.safe_load(f)
+        _print(f"Extracted at:  {meta.get('extracted_at', 'unknown')}")
+        _print(f"Model:         {meta.get('model', 'unknown')}")
+        _print(f"Pipeline:      v{meta.get('pipeline_version', 'unknown')}")
+        _print(f"Prompt hash:   {meta.get('prompt_hash', 'unknown')}")
+        src_files = meta.get("source_files") or []
+        _print(f"Source files:  {len(src_files)}")
+        for sf in src_files:
+            size_mb = (sf.get("size_bytes") or 0) / (1024 * 1024)
+            _print(f"  {sf.get('type', '?'):12s}  {sf.get('path', '?')}  ({size_mb:.1f} MB)")
+    else:
+        _print("  [no _meta.yaml found]")
+
+    extract_dir = pkg / "extract"
+    if extract_dir.exists():
+        extracts = [p for p in extract_dir.glob("*.md") if p.name != "synthesis.md"]
+        _print(f"\nExtract files: {len(extracts)}")
+        for e in sorted(extracts):
+            _print(f"  {e.name}")
+
+    history_dir = pkg / ".history"
+    if history_dir.exists():
+        versions = sorted(history_dir.iterdir())
+        _print(f"\nHistory: {len(versions)} previous version(s)")
+        for v in versions:
+            _print(f"  {v.name}")
+
+    frames_dir = pkg / "source" / "frames"
+    if frames_dir.exists():
+        frame_files = sorted(frames_dir.glob("frame_*.png"))
+        _print(f"\nFrames: {len(frame_files)}")
 
 
 if __name__ == "__main__":
-    main()
+    cli()

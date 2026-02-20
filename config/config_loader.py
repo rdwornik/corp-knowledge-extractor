@@ -94,6 +94,66 @@ def reload(file: str = None):
         del _cache[file]
 
 
+def load_config() -> dict:
+    """
+    Load and merge all config files into a unified dict.
+
+    Returns:
+        Merged configuration dict with keys: settings, processing,
+        anonymization, categories, filters
+    """
+    config_files = ["settings", "processing", "anonymize", "categories", "filters"]
+    merged = {}
+    for name in config_files:
+        try:
+            data = _load_config(name)
+            # Store under canonical name (anonymize → anonymization)
+            key = "anonymization" if name == "anonymize" else name
+            merged[key] = data
+        except FileNotFoundError:
+            pass
+
+    # Flatten settings keys to top level for convenience
+    for top_key, value in merged.get("settings", {}).items():
+        merged.setdefault(top_key, value)
+
+    return merged
+
+
+def get_prompt(config: dict, prompt_name: str) -> str:
+    """
+    Get a named prompt from config.
+
+    Args:
+        config: Unified config dict from load_config()
+        prompt_name: Key under config['prompts'] (e.g., 'extract', 'synthesize')
+
+    Returns:
+        Prompt string
+
+    Raises:
+        KeyError: If prompt_name not found
+    """
+    prompts = config.get("prompts") or {}
+    if prompt_name not in prompts:
+        raise KeyError(f"Prompt '{prompt_name}' not found in config. Available: {list(prompts.keys())}")
+    return prompts[prompt_name]
+
+
+def get_file_types(config: dict) -> dict:
+    """
+    Get file type extension mapping from config.
+
+    Args:
+        config: Unified config dict from load_config()
+
+    Returns:
+        Dict mapping type names to lists of extensions, e.g.
+        {'video': ['.mp4', '.mkv'], 'audio': ['.mp3'], ...}
+    """
+    return config.get("file_types") or {}
+
+
 def get_path(file: str, key: str) -> str:
     """
     Get a path from config and resolve it to absolute path.
