@@ -11,6 +11,16 @@ gemini:
   polling_interval_sec: 5
 
 # ======================
+# FRAME SAMPLING (new pipeline)
+# ======================
+
+frame_sampling:
+  interval_sec: 10          # Extract 1 frame every N seconds
+  max_frames: 500           # Safety cap
+  format: "png"             # Output format
+  cleanup_non_slides: true  # Delete temp frames after Gemini selects unique slides
+
+# ======================
 # VIDEO COMPRESSION (new pipeline)
 # ======================
 
@@ -61,6 +71,50 @@ prompts:
 
     Focus on capturing what was EXPLAINED and DISCUSSED, not just what is visible.
     Extract concrete details, technical specifics, and insights.
+
+  extract_with_slides: |
+    You are analyzing a corporate video recording.
+    You receive the video for audio/transcript AND sampled frame images taken every 10 seconds.
+
+    Your job:
+    1. Analyze the full video (audio + visual)
+    2. From the provided frame samples, identify which ones show UNIQUE slides or screens
+       - Skip duplicate/similar frames (same slide, just cursor moved)
+       - Skip transition frames, loading screens, blank screens
+       - Skip frames that are just the speaker's face without content
+    3. For each unique slide/screen you identify, provide detailed analysis
+
+    Respond ONLY with valid JSON, no markdown, no preamble:
+    {
+      "title": "descriptive title",
+      "summary": "2-5 sentences about the full video content",
+      "key_points": ["takeaway 1", "takeaway 2"],
+      "topics": ["topic1", "topic2"],
+      "people": ["Name (Role)"],
+      "products": ["product1"],
+      "type": "training|demo|meeting|workshop|presentation|lecture|tutorial",
+      "language": "en",
+      "quality": "full|partial|fragment",
+      "duration_min": 50,
+      "transcript_excerpt": "most important ~500 words from speaker",
+      "slides": [
+        {
+          "frame_index": 42,
+          "slide_number": 1,
+          "slide_title": "Title visible on slide",
+          "slide_content": "All text and visual elements on the slide",
+          "speaker_explanation": "What the speaker SAID about this slide — from audio, not slide text",
+          "key_points": ["key point from this slide"],
+          "timestamp_approx": "07:00"
+        }
+      ]
+    }
+
+    IMPORTANT:
+    - frame_index must match the sample_NNNN number (0-based) of the provided frame image
+    - speaker_explanation must come from AUDIO, not from reading the slide
+    - slide_content is OCR — what is visually on the slide
+    - If the video has no slides (audio-only meeting), return empty slides array
 
   extract_with_frames: |
     You are analyzing a corporate video recording that contains a presentation.
