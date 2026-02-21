@@ -20,12 +20,12 @@ import json
 import logging
 import mimetypes
 import os
-import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from src.inventory import SourceFile, FileType
+from src.utils import parse_llm_json
 
 log = logging.getLogger(__name__)
 
@@ -97,23 +97,14 @@ def _get_prompt(config: dict, prompt_name: str) -> str:
     return prompt
 
 
-def _strip_fences(text: str) -> str:
-    """Remove markdown code fences from LLM response."""
-    text = text.strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    return text.strip()
-
-
 def _parse_response(response_text: str, source_file: SourceFile) -> dict:
-    """Parse JSON from LLM response, with error context."""
-    cleaned = _strip_fences(response_text)
+    """Parse JSON from LLM response using robust helper."""
+    log.debug("Raw Gemini response for %s: %s", source_file.path.name, response_text[:1000])
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
+        return parse_llm_json(response_text)
+    except ValueError as exc:
         raise ExtractionError(
-            f"Failed to parse JSON response for {source_file.path.name}: {exc}\n"
-            f"Response (first 500 chars): {response_text[:500]}"
+            f"Failed to parse JSON response for {source_file.path.name}: {exc}"
         )
 
 
