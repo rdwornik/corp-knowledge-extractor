@@ -32,7 +32,7 @@ quality: "{{ quality }}"
 {% if slide.timestamp_approx %}*Timestamp: {{ slide.timestamp_approx }}*
 
 {% endif %}
-![Slide {{ slide.slide_number }}](../source/frames/frame_{{ "%03d" % slide.slide_number }}.png)
+![Slide {{ slide.slide_number }}](../source/frames/slide_{{ "%03d" % slide.slide_number }}.png)
 
 **On the slide:** {{ slide.slide_content }}
 
@@ -45,7 +45,9 @@ quality: "{{ quality }}"
 {% endfor %}
 {% endif %}
 
+---
 {% endfor %}
+
 {% else %}
 
 {% if topics %}
