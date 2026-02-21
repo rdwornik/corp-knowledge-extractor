@@ -75,49 +75,51 @@ The project is designed to support three types of corporate meetings:
 
 ## Tech Stack
 
-- **Frame Extraction:** OpenCV with pixel-based change detection (`src/frames/extractor.py`)
-- **Knowledge Extraction:** Gemini API — receives video file + frame images in one request
-- **Compression:** FFmpeg (reduces video size before upload)
-- **Anonymization:** Custom terms injected into Gemini prompt
+- **Frame Sampling:** OpenCV time-based sampling (`src/frames/sampler.py`) — dumb, no pixel math
+- **Slide Selection:** Gemini AI — receives sampled frames and identifies unique slides
+- **Knowledge Extraction:** Gemini API — video + frames in one call, produces per-slide analysis
+- **Compression:** FFmpeg (reduces video size before Gemini upload)
+- **Anonymization:** Custom terms injected into Gemini prompt (no local NER)
 - **Output:** Markdown package with YAML frontmatter (Obsidian Dataview compatible)
 
-> **Architecture note:** Frame extraction (OpenCV) is NOT replaced by Gemini.
-> OpenCV detects slide transitions and produces frame screenshots.
-> Gemini then receives both the video AND the frame images in a single API call,
-> allowing it to produce per-slide analysis (slide_title + speaker_explanation + key_points)
-> grounded in visual evidence.
+> **Architecture principle:** Frame sampling is DUMB (just time intervals), AI is SMART.
+> OpenCV samples one frame every N seconds. Gemini decides which samples show unique slides,
+> producing `slide_title + speaker_explanation + key_points` grounded in both visual and audio.
+> The old pixel-comparison approach (trying to detect slide transitions in code) is replaced by
+> AI judgement. Presets (powerpoint/excel/demo/hybrid) are eliminated — one flow handles all.
 
 ## Project Structure
 
 ```
 corporate-knowledge-extractor/
 ├── config/
-│   ├── settings.yaml                   # Main config (gemini, compression, prompts, file_types)
-│   ├── processing.yaml                 # Frame extraction + deduplication settings
-│   ├── anonymize.yaml                  # Custom redaction terms
-│   ├── categories.yaml                 # Categorization rules
-│   ├── filters.yaml                    # Junk patterns
-│   └── config_loader.py                # load_config(), get_prompt(), get_file_types()
+│   ├── settings.yaml    # Main config: gemini, frame_sampling, compression, prompts, file_types
+│   ├── processing.yaml  # Legacy (alignment params, kept for reference)
+│   ├── anonymize.yaml   # Custom redaction terms
+│   ├── categories.yaml  # Categorization rules
+│   ├── filters.yaml     # Junk patterns
+│   └── config_loader.py # load_config(), get_prompt(), get_file_types()
 ├── src/
-│   ├── inventory.py                    # Scan + classify input files
-│   ├── compress.py                     # FFmpeg video compression
+│   ├── inventory.py     # Scan + classify input files → list[SourceFile]
+│   ├── compress.py      # FFmpeg video compression
 │   ├── frames/
-│   │   └── extractor.py                # OpenCV pixel-based frame extraction
-│   ├── extract.py                      # Gemini extraction (video+frames or standalone)
-│   ├── correlate.py                    # Group related files
-│   ├── synthesize.py                   # Build output package (Jinja2 templates)
-│   └── reextract.py                    # Re-run extraction on existing package
+│   │   └── sampler.py   # OpenCV time-based frame sampling → list[SampledFrame]
+│   ├── extract.py       # Gemini extraction (video+frames or standalone)
+│   ├── correlate.py     # Group related files → list[FileGroup]
+│   ├── synthesize.py    # Build output package (Jinja2 templates)
+│   ├── reextract.py     # Re-run extraction on existing package
+│   └── utils.py         # parse_llm_json() — robust JSON parsing
 ├── templates/
-│   ├── index.md.j2                     # Package index (Obsidian frontmatter)
-│   ├── extract.md.j2                   # Per-file extract (slides with images)
-│   └── meta.yaml.j2                    # Extraction metadata
+│   ├── index.md.j2      # Package index (Obsidian Dataview frontmatter)
+│   ├── extract.md.j2    # Per-file extract (slides with images)
+│   └── meta.yaml.j2     # Extraction metadata
 ├── scripts/
-│   ├── run.py                          # Main entry point (Click CLI)
-│   └── compress_video.py               # Standalone compression utility
+│   ├── run.py           # Main entry point (Click CLI)
+│   └── compress_video.py # Standalone compression utility
 ├── tests/
-│   ├── test_inventory.py               # File classification + scan tests
-│   └── test_correlate.py               # File grouping tests
-└── output/                             # Generated packages
+│   ├── test_inventory.py
+│   └── test_correlate.py
+└── output/              # Generated packages
 ```
 
 ## Pipeline Flow
@@ -125,18 +127,24 @@ corporate-knowledge-extractor/
 ```
 Input (file or folder)
     ↓
-[1] scan_input()           → list[SourceFile]   (inventory.py)
+[1] scan_input()         → list[SourceFile]        (inventory.py)
     ↓
-[2] compress_video()       → compressed video   (compress.py, videos only)
+[2] compress_video()     → compressed video        (compress.py, videos only, >50MB)
     ↓
-[3] extract_frames()       → list[Path]         (frames/extractor.py, videos only)
-                             OpenCV pixel-based change detection → frame_001.png, frame_002.png...
+[3] sample_frames()      → list[SampledFrame]      (frames/sampler.py, videos only)
+                           OpenCV: 1 frame every N seconds → temp/sample_0000.png...
     ↓
-[4] extract_knowledge()    → ExtractionResult   (extract.py, Gemini API)
-                             VIDEO: upload video + send frame images → per-slide analysis
-                             OTHER: inline content → general extraction
+[4] extract_knowledge()  → ExtractionResult        (extract.py, Gemini API)
+                           VIDEO+frames: upload video + send frame images
+                             → Gemini identifies unique slides
+                             → slides[]: frame_index, speaker_explanation, key_points
+                           OTHER: inline content → general extraction
     ↓
-[5] correlate_files()      → list[FileGroup]    (correlate.py)
+[5] keep_slide_frames()  → slide_001.png...        (run.py)
+                           Copy AI-selected frames to source/frames/
+                           Delete temp samples
+    ↓
+[6] correlate_files()    → list[FileGroup]         (correlate.py)
     ↓
 [6] build_package()        → package dir        (synthesize.py, Jinja2 templates)
     │
