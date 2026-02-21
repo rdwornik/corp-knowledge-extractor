@@ -34,6 +34,7 @@ from src.compress import compress_video, needs_compression
 from src.correlate import FileGroup
 from src.extract import ExtractionResult, ExtractionError
 from src.inventory import FileType, SourceFile
+from src.utils import parse_llm_json
 
 log = logging.getLogger(__name__)
 
@@ -136,11 +137,9 @@ def _run_synthesis(
                 response_mime_type="application/json",
             ),
         )
-        import re
-        text = response.text or "{}"
-        text = re.sub(r"^```(?:json)?\s*", "", text.strip())
-        text = re.sub(r"\s*```$", "", text)
-        return json.loads(text)
+        response_text = response.text or "{}"
+        log.debug("Raw Gemini synthesis response: %s", response_text[:1000])
+        return parse_llm_json(response_text)
     except Exception as exc:
         log.error("Synthesis call failed: %s", exc)
         return {}
