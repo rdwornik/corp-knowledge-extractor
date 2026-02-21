@@ -67,7 +67,9 @@ def keep_slide_frames(
     """
     Copy only the frames Gemini identified as unique slides to the output dir.
 
-    Renames them slide_001.png, slide_002.png, ... to match slide_number.
+    Renames them slide_001.png, slide_002.png, ... sequentially (1-based),
+    regardless of the frame_index or slide_number Gemini returned.
+    Updates slide.slide_number in place so markdown references stay consistent.
     Deletes the temp sampled frames when cleanup_non_slides is enabled.
 
     Args:
@@ -81,13 +83,16 @@ def keep_slide_frames(
     # Build lookup: frame_index → SampledFrame
     frame_by_index = {f.index: f for f in all_frames}
 
+    seq = 1  # Sequential counter for output filenames
     for slide in slides:
         frame_idx = slide.frame_index
         source_frame = frame_by_index.get(frame_idx)
         if source_frame and source_frame.path.exists():
-            target = output_frames_dir / f"slide_{slide.slide_number:03d}.png"
+            target = output_frames_dir / f"slide_{seq:03d}.png"
             shutil.copy2(source_frame.path, target)
-            log.debug("Copied frame %d → %s", frame_idx, target.name)
+            log.debug("Copied frame %d -> slide_%03d.png", frame_idx, seq)
+            slide.slide_number = seq  # Keep slide_number in sync with filename
+            seq += 1
         else:
             log.warning(
                 "Slide %d references frame_index=%d but no matching sample found",
