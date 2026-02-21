@@ -120,8 +120,8 @@ def cli():
 def process(input_path: str, output: str, name: str | None):
     """Process a file or folder into a knowledge package.
 
-    Pipeline: inventory → compress → sample_frames → extract (Gemini)
-              → keep_slides + cleanup → correlate → synthesize
+    Pipeline: inventory > compress > sample_frames > extract (Gemini)
+              > keep_slides + cleanup > correlate > synthesize
     """
     config = load_config()
     input_p = Path(input_path)
