@@ -51,113 +51,104 @@ file_types:
 
 prompts:
   extract: |
-    You are a knowledge extraction system for corporate meeting recordings.
-    Analyze this file thoroughly and extract structured knowledge.
+    You are a critical-thinking knowledge analyst helping a fast-reading
+    technical professional learn from corporate recordings and documents.
 
-    Extract the following information and respond with valid JSON only (no markdown fences):
+    RULES:
+    - Do NOT describe what is visible — the reader will see the file.
+    - FOCUS on what was EXPLAINED or DECIDED — specifically:
+      - Things specific to this company, not generic industry knowledge
+      - Concrete numbers, commitments, timelines, decisions
+      - Practical implications — "so what does this mean?"
+      - Surprising or counterintuitive claims
+    - SKIP corporate filler: "we're excited", "world-class", "committed to excellence"
+    - BE CRITICAL: note when the content is vague, makes unsupported claims, or dodges specifics
+    - Write as a teacher helping a smart colleague understand what actually matters
+    - Do NOT use [[Obsidian links]] anywhere in your text.
+
+    FORMATTING RULES:
+    - Start each insight paragraph with 2-3 bold words summarizing the point
+    - Keep paragraphs short (2-3 sentences max)
+
+    TOPIC/PEOPLE/PRODUCT LIMITS:
+    - topics: maximum 8, ranked by importance
+    - products: maximum 4
+    - people: maximum 3, prioritize presenters/speakers
+
+    Respond ONLY with valid JSON (no markdown fences):
     {
-      "title": "Descriptive title for this content",
-      "summary": "2-3 sentence summary of the main content",
-      "key_points": ["point 1", "point 2", "..."],
-      "topics": ["topic1", "topic2"],
-      "people": ["person names mentioned"],
-      "products": ["product/system names mentioned"],
+      "title": "Descriptive title using full product/company names",
+      "summary": "2-3 sentences — what matters here and why, not what happened",
+      "key_points": ["insight 1", "insight 2"],
+      "topics": ["Topic Name", "Another Topic"],
+      "people": ["Full Name (Role if known)"],
+      "products": ["Full Product Name"],
       "content_type": "training|meeting|demo|presentation|discussion",
       "language": "en",
       "quality": "high|medium|low",
       "duration_min": null,
-      "transcript_excerpt": "First 200 chars of transcript or key spoken content"
+      "transcript_excerpt": "Most important ~500 words — decisions, specifics, not filler"
     }
 
-    Focus on capturing what was EXPLAINED and DISCUSSED, not just what is visible.
-    Extract concrete details, technical specifics, and insights.
-
   extract_with_slides: |
-    You are analyzing a corporate video recording.
-    You receive the video for audio/transcript AND sampled frame images taken every 10 seconds.
+    You are a critical-thinking knowledge analyst helping a fast-reading
+    technical professional learn from corporate video recordings.
 
-    Your job:
-    1. Analyze the full video (audio + visual)
-    2. From the provided frame samples, identify which ones show UNIQUE slides or screens
-       - Skip duplicate/similar frames (same slide, just cursor moved)
-       - Skip transition frames, loading screens, blank screens
-       - Skip frames that are just the speaker's face without content
-    3. For each unique slide/screen you identify, provide detailed analysis
+    You receive the video AND sampled frame images (slides).
 
-    Respond ONLY with valid JSON, no markdown, no preamble:
+    RULES FOR SLIDE ANALYSIS:
+    - Do NOT describe what is visually on the slides. The reader sees the image.
+    - FOCUS on what the speaker SAID about each slide — specifically:
+      - Things specific to this company, not generic industry knowledge
+      - Concrete numbers, commitments, timelines, decisions
+      - Practical implications — "so what does this mean?"
+      - Surprising or counterintuitive claims
+    - SKIP corporate filler: "we're excited", "world-class", "committed to excellence"
+    - BE CRITICAL: note when speaker is vague, makes unsupported claims, or dodges specifics
+    - Write as a teacher helping a smart colleague understand what actually matters
+    - Do NOT use [[Obsidian links]] anywhere in your text. Links are handled separately.
+
+    FORMATTING RULES:
+    - Start each insight paragraph with 2-3 bold words summarizing the point
+    - Keep paragraphs short (2-3 sentences max)
+    - Mark critical observations or red flags with a "WARNING:" prefix
+
+    TOPIC/PEOPLE/PRODUCT LIMITS:
+    - topics: maximum 8, ranked by importance
+    - products: maximum 4
+    - people: maximum 3, prioritize presenters/speakers
+
+    Respond ONLY with valid JSON, no markdown fences:
     {
-      "title": "descriptive title",
-      "summary": "2-5 sentences about the full video content",
-      "key_points": ["takeaway 1", "takeaway 2"],
-      "topics": ["topic1", "topic2"],
-      "people": ["Name (Role)"],
-      "products": ["product1"],
+      "title": "descriptive title using full product/company names",
+      "summary": "2-3 sentences — what matters here and why, not what happened",
+      "key_points": ["insight 1", "insight 2"],
+      "topics": ["Topic Name", "Another Topic"],
+      "people": ["Full Name (Role if known)"],
+      "products": ["Full Product Name"],
       "type": "training|demo|meeting|workshop|presentation|lecture|tutorial",
       "language": "en",
       "quality": "full|partial|fragment",
       "duration_min": 50,
-      "transcript_excerpt": "most important ~500 words from speaker",
+      "transcript_excerpt": "most important ~500 words — decisions, specifics, not filler",
       "slides": [
         {
-          "frame_index": 42,
+          "frame_index": 5,
           "slide_number": 1,
-          "slide_title": "Title visible on slide",
-          "slide_content": "All text and visual elements on the slide",
-          "speaker_explanation": "What the speaker SAID about this slide — from audio, not slide text",
-          "key_points": ["key point from this slide"],
-          "timestamp_approx": "07:00"
+          "slide_title": "Short title",
+          "timestamp_approx": "07:00",
+          "speaker_insight": "What the speaker ACTUALLY SAID that matters. Bold first 2-3 words of each paragraph. Focus on specifics, commitments, implications. Skip anything that just reads the slide.",
+          "so_what": "Why this matters practically. One paragraph.",
+          "critical_notes": "Red flags, vague claims, things needing verification. Null if nothing to flag.",
+          "key_facts": ["Concrete fact 1 with number/date/name", "Concrete fact 2"]
         }
       ]
     }
 
     IMPORTANT:
     - frame_index must match the sample_NNNN number (0-based) of the provided frame image
-    - speaker_explanation must come from AUDIO, not from reading the slide
-    - slide_content is OCR — what is visually on the slide
+    - speaker_insight must come from AUDIO, not from reading the slide
     - If the video has no slides (audio-only meeting), return empty slides array
-
-  extract_with_frames: |
-    You are analyzing a corporate video recording that contains a presentation.
-    You receive the full video AND extracted slide frames (screenshots of distinct slides).
-
-    For the overall video, provide:
-    - title, summary, topics, people, products, content_type, language, quality, duration_min, transcript_excerpt
-
-    For EACH provided frame/slide image (in the order they appear), provide a slide analysis:
-    - slide_number: sequential number matching the order the frames were provided
-    - slide_title: title visible on the slide (empty string if no title)
-    - slide_content: text/diagrams shown on the slide (describe what is visible)
-    - speaker_explanation: what the speaker SAID about this slide (from audio — NOT from slide text)
-    - key_points: 2-4 important takeaways from this slide
-    - timestamp_approx: approximate timestamp in the video (format: "MM:SS")
-
-    Focus on capturing what the speaker EXPLAINED, not just what is on the slide.
-    Extract concrete details, technical specifics, and insider knowledge.
-
-    Respond ONLY with valid JSON (no markdown fences):
-    {
-      "title": "...",
-      "summary": "...",
-      "key_points": ["..."],
-      "topics": ["..."],
-      "people": ["..."],
-      "products": ["..."],
-      "content_type": "training|meeting|demo|presentation|discussion",
-      "language": "en",
-      "quality": "high|medium|low",
-      "duration_min": null,
-      "transcript_excerpt": "...",
-      "slides": [
-        {
-          "slide_number": 1,
-          "slide_title": "...",
-          "slide_content": "...",
-          "speaker_explanation": "...",
-          "key_points": ["..."],
-          "timestamp_approx": "MM:SS"
-        }
-      ]
-    }
 
   synthesize: |
     You are synthesizing knowledge from multiple related files into a unified overview.
@@ -289,6 +280,17 @@ transcription:
     # Overlap between chunks in seconds (preserves context at boundaries)
     # 5s ensures words at chunk boundaries aren't lost
     overlap_seconds: 5.0
+
+# ======================
+# POST-PROCESSING
+# ======================
+
+post_processing:
+  term_normalization:
+    "Yonder": "Blue Yonder"
+    "BY Platform": "Blue Yonder Platform"
+    "BY ": "Blue Yonder "
+    "JDA": "Blue Yonder (formerly JDA)"
 
 # ======================
 # CONTENT LIMITS
