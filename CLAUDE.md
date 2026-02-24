@@ -696,6 +696,27 @@ quality_data = {
 # compare_reports.py uses these metrics for comparison
 ```
 
+## Knowledge Graph Architecture (Council Decision 2026-02-24)
+
+- Frontmatter is the ONLY load-bearing truth for topics/products/people
+- NO inline [[links]] in note text — text stays clean for ADHD reading
+- One deterministic **Links:** line generated from frontmatter (not LLM judgment)
+- Taxonomy normalization: `config/taxonomy.yaml` defines canonical names + aliases
+- Unknown terms logged to `config/taxonomy_review.yaml` for weekly batch review
+- Cardinality caps enforced in code: max 8 topics, 4 products, 3 people per note
+- Topic hub pages (Phase 2, ~25 videos): auto-generated stubs with Dataview query
+- People/product nodes: products at ≥2 mentions, people at ≥3 or VIP allowlist
+- Prompt enforces: bold-first paragraphs, "so_what" section, critical_notes for red flags
+- `SlideAnalysis` fields: `speaker_insight`, `so_what`, `critical_notes`, `key_facts`
+  (replaces old `speaker_explanation`, `slide_content`, `key_points`)
+
+### Post-Processing Flow (src/post_process.py)
+1. Term normalization — find-replace from `settings.yaml post_processing.term_normalization`
+2. Taxonomy normalization — alias matching for topics and products
+3. Cardinality caps — truncate to hard limits (8/4/3)
+4. Links line — deterministic `**Links:** [[Topic]] · [[Product]] · [[Person]]`
+5. Unknown terms — appended to `taxonomy_review.yaml` for batch approval
+
 ## Future Improvements
 
 1. **Multi-input support (Type B/C meetings):**
