@@ -1,79 +1,62 @@
 ---
-source: "{{ source_path }}"
-type: "{{ file_type }}"
+source: "{{ source_file }}"
+type: "{{ content_type }}"
 title: "{{ title }}"
+date: {{ date }}
 topics: {{ topics | tojson }}
 people: {{ people | tojson }}
 products: {{ products | tojson }}
-content_type: "{{ content_type }}"
 language: "{{ language }}"
 quality: "{{ quality }}"
 {% if duration_min %}duration_min: {{ duration_min }}
-{% endif %}tokens_used: {{ tokens_used }}
+{% endif %}model: "{{ model }}"
+tokens_used: {{ tokens_used }}
 ---
 
 # {{ title }}
 
-## Summary
+{{ links_line }}
 
 {{ summary }}
 
-## Key Points
-
-{% for point in key_points %}- {{ point }}
-{% endfor %}
-
 {% if slides %}
-## Slides
-
 {% for slide in slides %}
-### Slide {{ slide.slide_number }}{% if slide.slide_title %}: {{ slide.slide_title }}{% endif %}
+## Slide {{ slide.slide_number }}: {{ slide.slide_title }}
+*{{ slide.timestamp_approx }}*
 
-{% if slide.timestamp_approx %}*Timestamp: {{ slide.timestamp_approx }}*
+![Slide {{ slide.slide_number }}](../source/frames/slide_{{ "%03d" | format(slide.slide_number) }}.png)
 
+{{ slide.speaker_insight }}
+
+{% if slide.so_what %}
+**So what:** {{ slide.so_what }}
 {% endif %}
-![Slide {{ slide.slide_number }}](../source/frames/slide_{{ "%03d" % slide.slide_number }}.png)
 
-**On the slide:** {{ slide.slide_content }}
+{% if slide.critical_notes %}
+> WARNING: {{ slide.critical_notes }}
+{% endif %}
 
-**Speaker explained:** {{ slide.speaker_explanation }}
-
-{% if slide.key_points %}
-**Key points:**
-{% for point in slide.key_points %}
-- {{ point }}
+{% if slide.key_facts %}
+**Key facts:**
+{% for fact in slide.key_facts %}
+- {{ fact }}
 {% endfor %}
 {% endif %}
 
 ---
 {% endfor %}
-
-{% else %}
-
-{% if topics %}
-## Topics
-
-{% for topic in topics %}- {{ topic }}
-{% endfor %}
 {% endif %}
 
-{% if people %}
-## People Mentioned
+{% if key_points %}
+## Key Takeaways
 
-{% for person in people %}- {{ person }}
-{% endfor %}
-{% endif %}
-
-{% if products %}
-## Products & Systems
-
-{% for product in products %}- {{ product }}
+{% for point in key_points %}
+- {{ point }}
 {% endfor %}
 {% endif %}
 
 {% if transcript_excerpt %}
-## Transcript Excerpt
+## Notable Quotes
 
 {{ transcript_excerpt }}
-{% endif %}
 {% endif %}

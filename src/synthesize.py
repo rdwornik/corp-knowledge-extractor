@@ -198,21 +198,23 @@ def build_package(
     for stem, result in extracts.items():
         tmpl = env.get_template("extract.md.j2")
         content = tmpl.render(
-            source_path=str(result.source_file.path),
-            file_type=result.source_file.type.value,
+            source_file=str(result.source_file.path),
+            content_type=result.content_type,
             title=result.title,
+            date=now.strftime("%Y-%m-%d"),
             summary=result.summary,
             key_points=result.key_points,
             topics=result.topics,
             people=result.people,
             products=result.products,
             slides=result.slides,
-            content_type=result.content_type,
             language=result.language,
             quality=result.quality,
             duration_min=result.duration_min,
             transcript_excerpt=result.transcript_excerpt,
+            model=model,
             tokens_used=result.tokens_used,
+            links_line=result.links_line,
         )
         out_path = extract_dir / f"{stem}.md"
         out_path.write_text(content, encoding="utf-8")
