@@ -135,8 +135,8 @@ def _slides_from_json(slides_data: list) -> list[SlideAnalysis]:
     result = []
     for i, s in enumerate(slides_data or []):
         result.append(SlideAnalysis(
-            slide_number=int(s.get("slide_number", i + 1)),
-            frame_index=int(s.get("frame_index", 0)),
+            slide_number=int(s.get("slide_number") or (i + 1)),
+            frame_index=int(s.get("frame_index") or 0),
             slide_title=s.get("slide_title") or "",
             timestamp_approx=s.get("timestamp_approx") or "",
             speaker_insight=s.get("speaker_insight") or "",

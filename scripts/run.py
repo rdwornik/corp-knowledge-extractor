@@ -3,7 +3,7 @@ Corporate Knowledge Extractor - main entry point.
 
 Pipeline:
     inventory → compress → sample_frames → extract (Gemini + frames)
-             → keep_slides + cleanup → correlate → synthesize
+             ->keep_slides + cleanup → correlate → synthesize
 
 Commands:
     process    Process a file or folder (new package)
@@ -165,7 +165,7 @@ def process(input_path: str, output: str, name: str | None):
     for f in files:
         if f.type == FileType.VIDEO:
             temp_dir = output_p / package_name / "temp_frames" / f.name
-            _print(f"  → {f.path.name}")
+            _print(f"  -> {f.path.name}")
             frames = sample_frames(f.path, temp_dir, config)
             sampled[f.name] = frames
             _print(f"    {len(frames)} frames sampled")
@@ -179,16 +179,16 @@ def process(input_path: str, output: str, name: str | None):
         frames = sampled.get(f.name)
         frame_count = len(frames) if frames else 0
         label = f.path.name + (f" + {frame_count} frames" if frame_count else "")
-        _print(f"  → {label}")
+        _print(f"  -> {label}")
         try:
             result = extract_knowledge(f, config, sampled_frames=frames)
             extracts[f.name] = result
             slide_info = f" | {len(result.slides)} slides identified" if result.slides else ""
-            _print(f"    ✓ {result.title}{slide_info}")
+            _print(f"    [OK] {result.title}{slide_info}")
         except ExtractionError as exc:
             log.warning("Skipping %s: %s", f.path.name, exc)
             failed.append(f.path.name)
-            _print(f"    ✗ {exc}")
+            _print(f"    [FAIL] {exc}")
 
     if not extracts:
         _print("[red]No files were successfully extracted.[/red]" if HAS_RICH
@@ -222,7 +222,7 @@ def process(input_path: str, output: str, name: str | None):
     _print("\nBuilding package...")
     pkg_path = build_package(groups, extracts, output_p, package_name, config)
 
-    _print(f"\n[green]✓ Done![/green]" if HAS_RICH else "\n✓ Done!")
+    _print(f"\n[green]Done![/green]" if HAS_RICH else "\nDone!")
     _print(f"Package: {pkg_path}")
 
 
@@ -235,10 +235,10 @@ def reextract(package_path: str):
     _print(f"\nRe-extracting: {pkg}")
     try:
         reextract_package(pkg, config)
-        _print(f"\n[green]✓ Done.[/green]" if HAS_RICH else "\n✓ Done.")
+        _print(f"\n[green]Done.[/green]" if HAS_RICH else "\nDone.")
         _print(f"Package: {pkg}")
     except Exception as exc:
-        _print(f"[red]✗ Error: {exc}[/red]" if HAS_RICH else f"✗ Error: {exc}")
+        _print(f"[red]Error: {exc}[/red]" if HAS_RICH else f"Error: {exc}")
         log.exception("Re-extraction failed")
         sys.exit(1)
 
