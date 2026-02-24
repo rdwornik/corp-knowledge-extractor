@@ -149,6 +149,7 @@ prompts:
     - frame_index must match the sample_NNNN number (0-based) of the provided frame image
     - speaker_insight must come from AUDIO, not from reading the slide
     - If the video has no slides (audio-only meeting), return empty slides array
+    - NEVER use double-quote characters (") inside JSON string values — use single quotes or backticks instead
 
   synthesize: |
     You are synthesizing knowledge from multiple related files into a unified overview.
