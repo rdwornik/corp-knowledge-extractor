@@ -1,0 +1,71 @@
+# Canonical topic names with aliases.
+# Pipeline normalizes extracted topics against this file.
+# New terms not in this file are logged to config/taxonomy_review.yaml for batch approval.
+
+topics:
+  - id: disaster-recovery
+    name: "Disaster Recovery"
+    aliases: ["DR", "disaster recovery planning", "DRP", "business continuity"]
+
+  - id: sla
+    name: "SLA"
+    aliases: ["Service Level Agreement", "Service Level Agreements", "SLAs", "service levels"]
+
+  - id: saas-architecture
+    name: "SaaS Architecture"
+    aliases: ["SaaS platform", "SaaS Platform", "cloud architecture", "platform architecture"]
+
+  - id: technical-account-manager
+    name: "Technical Account Manager"
+    aliases: ["TAM", "account manager", "technical account management"]
+
+  - id: wms
+    name: "WMS"
+    aliases: ["Warehouse Management System", "Warehouse Management", "warehouse management"]
+
+  - id: tms
+    name: "TMS"
+    aliases: ["Transportation Management System", "Transportation Management"]
+
+  - id: oms
+    name: "OMS"
+    aliases: ["Order Management System", "Order Management"]
+
+  - id: demand-planning
+    name: "Demand Planning"
+    aliases: ["demand forecasting", "forecasting"]
+
+  - id: supply-chain-planning
+    name: "Supply Chain Planning"
+    aliases: ["SCP", "supply chain", "planning solutions"]
+
+  - id: iso-certifications
+    name: "ISO Certifications"
+    aliases: ["ISO 27001", "ISO 22301", "ISO 27701", "SOC 2", "compliance certifications"]
+
+  - id: non-production-environments
+    name: "Non-Production Environments"
+    aliases: ["non-prod", "sandbox", "test environments", "staging"]
+
+  - id: incident-management
+    name: "Incident Management"
+    aliases: ["incident response", "severity levels"]
+
+products:
+  - id: blue-yonder-platform
+    name: "Blue Yonder Platform"
+    aliases: ["BY Platform", "Yonder platform", "the platform"]
+
+  - id: azure
+    name: "Azure"
+    aliases: ["Microsoft Azure", "Azure cloud"]
+
+people_vip:
+  # People who always get nodes regardless of mention count
+  - "Karthik"
+  - "Colette"
+
+# Thresholds
+thresholds:
+  people_node_min_mentions: 3    # People get a node after N distinct video mentions
+  product_node_min_mentions: 2   # Products get a node after N mentions
