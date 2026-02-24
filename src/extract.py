@@ -28,6 +28,7 @@ from pathlib import Path
 from src.inventory import SourceFile, FileType
 from src.frames.sampler import SampledFrame
 from src.utils import parse_llm_json
+from src.post_process import post_process_extraction
 
 log = logging.getLogger(__name__)
 
@@ -36,14 +37,15 @@ MAX_FRAMES_PER_REQUEST = 200
 
 
 @dataclass
-class SlideInfo:
+class SlideAnalysis:
     slide_number: int
     frame_index: int = 0          # sample_NNNN index from Gemini's response
     slide_title: str = ""
-    slide_content: str = ""
-    speaker_explanation: str = ""
-    key_points: list[str] = field(default_factory=list)
     timestamp_approx: str = ""
+    speaker_insight: str = ""     # What the speaker SAID — the main content
+    so_what: str = ""             # Practical implication paragraph
+    critical_notes: str | None = None  # Red flags / things to verify
+    key_facts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -60,9 +62,10 @@ class ExtractionResult:
     quality: str = "medium"
     duration_min: int | None = None
     transcript_excerpt: str = ""
-    slides: list[SlideInfo] = field(default_factory=list)
+    slides: list[SlideAnalysis] = field(default_factory=list)
     raw_json: dict = field(default_factory=dict)
     tokens_used: int = 0
+    links_line: str = ""          # Deterministic Links line from post-processing
 
 
 class ExtractionError(Exception):
@@ -128,17 +131,18 @@ def _upload_and_wait(client, path: Path, config: dict):
         uploaded = client.files.get(name=uploaded.name)
 
 
-def _slides_from_json(slides_data: list) -> list[SlideInfo]:
+def _slides_from_json(slides_data: list) -> list[SlideAnalysis]:
     result = []
     for i, s in enumerate(slides_data or []):
-        result.append(SlideInfo(
+        result.append(SlideAnalysis(
             slide_number=int(s.get("slide_number", i + 1)),
             frame_index=int(s.get("frame_index", 0)),
             slide_title=s.get("slide_title") or "",
-            slide_content=s.get("slide_content") or "",
-            speaker_explanation=s.get("speaker_explanation") or "",
-            key_points=s.get("key_points") or [],
             timestamp_approx=s.get("timestamp_approx") or "",
+            speaker_insight=s.get("speaker_insight") or "",
+            so_what=s.get("so_what") or "",
+            critical_notes=s.get("critical_notes") or None,
+            key_facts=s.get("key_facts") or [],
         ))
     return result
 
@@ -316,7 +320,17 @@ def extract_knowledge(
         tokens = getattr(response.usage_metadata, "total_token_count", 0) or 0
 
     data = _parse_response(response_text, file)
-    result = _result_from_json(data, file, tokens)
+
+    # Post-process: normalize terms, apply taxonomy, cap cardinality, build links line
+    taxonomy_path = Path(__file__).parent.parent / "config" / "taxonomy.yaml"
+    pp = post_process_extraction(data, config, taxonomy_path)
+    if pp.normalized_terms:
+        log.debug("Normalized: %s", pp.normalized_terms)
+    if pp.truncated_fields:
+        log.debug("Truncated fields: %s", pp.truncated_fields)
+
+    result = _result_from_json(pp.data, file, tokens)
+    result.links_line = pp.links_line
 
     log.info(
         "Extracted: '%s' | slides=%d | topics=%s | tokens=%d",
