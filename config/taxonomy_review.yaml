@@ -1,3 +1,12 @@
-# New terms extracted by pipeline that don't match taxonomy.
-# Review weekly — approve by moving to taxonomy.yaml, or ignore.
-pending: []
+pending:
+- Service Level Agreements (SLA)
+- Customer Support
+- Performance Management
+- Environments
+- SaaS Platform
+- WMS (Warehouse Management System)
+- SaaS
+- Service Level Agreement (SLA)
+- Performance Monitoring
+- Cloud Computing
+- WMS
