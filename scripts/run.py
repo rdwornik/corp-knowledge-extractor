@@ -112,26 +112,51 @@ def keep_slide_frames(
             pass  # Not empty — leave it
 
 
-@click.group()
-def cli():
-    """Corporate Knowledge Extractor — API-first pipeline."""
-    pass
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    """Corporate Knowledge Extractor — API-first pipeline.
+
+    Run with no arguments to process all files in data/input/ automatically.
+    """
+    if ctx.invoked_subcommand is None:
+        # Default: process the configured input directory
+        ctx.invoke(process)
 
 
 @cli.command()
-@click.argument("input_path", type=click.Path(exists=True))
+@click.argument("input_path", type=click.Path(exists=True), default=None, required=False)
 @click.option("--output", default="output", show_default=True, help="Output directory")
 @click.option("--name", default=None, help="Package name (defaults to input name)")
-def process(input_path: str, output: str, name: str | None):
+def process(input_path: str | None, output: str, name: str | None):
     """Process a file or folder into a knowledge package.
+
+    INPUT_PATH defaults to the data/input/ directory from config if not given.
 
     Pipeline: inventory > compress > sample_frames > extract (Gemini)
               > keep_slides + cleanup > correlate > synthesize
     """
     config = load_config()
+
+    # Resolve input path — fall back to configured input directory
+    from datetime import datetime
+    using_default_input = input_path is None
+    if using_default_input:
+        input_path = config.get("input", {}).get("directory", "data/input")
+        _print(f"No path given — using configured input directory: {input_path}")
+
     input_p = Path(input_path)
+    if not input_p.exists():
+        _print(f"Input path does not exist: {input_p}")
+        sys.exit(1)
     output_p = Path(output)
-    package_name = name or input_p.stem or "package"
+    # Use timestamp when processing the default input folder (stem would just be "input")
+    if name:
+        package_name = name
+    elif using_default_input:
+        package_name = datetime.now().strftime("%Y-%m-%d_%H%M")
+    else:
+        package_name = input_p.stem or "package"
     output_frames_dir = output_p / package_name / "source" / "frames"
 
     _print(f"\n[bold]Corporate Knowledge Extractor[/bold]" if HAS_RICH
