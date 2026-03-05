@@ -29,6 +29,7 @@ from src.inventory import SourceFile, FileType
 from src.frames.sampler import SampledFrame
 from src.utils import parse_llm_json
 from src.post_process import post_process_extraction, PostProcessResult
+from src.taxonomy_prompt import get_taxonomy_for_prompt
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +102,10 @@ def _get_prompt(config: dict, prompt_name: str) -> str:
     anon_terms = (config.get("anonymization") or {}).get("custom_terms", [])
     if anon_terms:
         prompt += f"\n\nRedact these terms from all output: {', '.join(anon_terms)}"
+
+    # Inject canonical taxonomy so LLM uses correct terms from the start
+    if prompt_name in ("extract", "extract_with_slides"):
+        prompt += f"\n\n{get_taxonomy_for_prompt()}"
 
     return prompt
 
