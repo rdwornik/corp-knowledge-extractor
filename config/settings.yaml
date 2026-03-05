@@ -70,7 +70,9 @@ prompts:
     - Start each insight paragraph with 2-3 bold words summarizing the point
     - Keep paragraphs short (2-3 sentences max)
 
-    TOPIC/PEOPLE/PRODUCT LIMITS:
+    TOPIC/PEOPLE/PRODUCT NAMING:
+    - Use CANONICAL TERMS from the taxonomy list provided below when a concept matches.
+      If unsure, use the closest canonical term. Only create new terms for genuinely novel concepts.
     - topics: maximum 8, ranked by importance
     - products: maximum 4
     - people: maximum 3, prioritize presenters/speakers
@@ -113,7 +115,9 @@ prompts:
     - Keep paragraphs short (2-3 sentences max)
     - Mark critical observations or red flags with a "WARNING:" prefix
 
-    TOPIC/PEOPLE/PRODUCT LIMITS:
+    TOPIC/PEOPLE/PRODUCT NAMING:
+    - Use CANONICAL TERMS from the taxonomy list provided below when a concept matches.
+      If unsure, use the closest canonical term. Only create new terms for genuinely novel concepts.
     - topics: maximum 8, ranked by importance
     - products: maximum 4
     - people: maximum 3, prioritize presenters/speakers
