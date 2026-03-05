@@ -215,6 +215,7 @@ def build_package(
             model=model,
             tokens_used=result.tokens_used,
             links_line=result.links_line,
+            source_tool=result.source_tool,
         )
         out_path = extract_dir / f"{stem}.md"
         out_path.write_text(content, encoding="utf-8")

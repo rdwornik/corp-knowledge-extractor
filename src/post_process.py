@@ -1,196 +1,120 @@
 """
 Post-processor for extraction results.
-- Term normalization (find-replace from config)
-- Taxonomy normalization (match to canonical names, log unknowns)
-- Cardinality enforcement (max topics/products/people)
-- Deterministic Links line generation
+Delegates to corp_os_meta for normalization, validation, and link generation.
+Adds CKE-specific logic: unknown term logging to local file.
 """
 import logging
 import yaml
 from pathlib import Path
 from dataclasses import dataclass, field
 
-logger = logging.getLogger(__name__)
+from corp_os_meta import (
+    normalize_frontmatter,
+    validate_frontmatter,
+    generate_links_line,
+    ValidationResult,
+)
+from corp_os_meta.models import NoteFrontmatter
+from corp_os_meta.normalize import load_taxonomy
 
-# Hard caps applied in code — prompt also asks for these limits
-_CARDINALITY_CAPS = {
-    "topics": 8,
-    "products": 4,
-    "people": 3,
-}
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PostProcessResult:
     """Result of post-processing with metadata about what changed."""
     data: dict
-    normalized_terms: list[str]   # terms that were normalized (e.g. "DR -> Disaster Recovery")
-    unknown_terms: list[str]      # terms not in taxonomy, logged for review
-    truncated_fields: list[str]   # fields that hit cardinality cap
-    links_line: str               # deterministic Links line for markdown
+    links_line: str
+    validation_result: ValidationResult
+    validated_note: NoteFrontmatter | None
+    changes: list[str] = field(default_factory=list)
+    unknown_terms: list[str] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
 
 
-def post_process_extraction(result: dict, config: dict, taxonomy_path: Path) -> PostProcessResult:
-    """Apply post-processing to raw Gemini extraction result.
+def post_process_extraction(
+    raw_result: dict,
+    source_tool: str = "knowledge-extractor",
+    source_file: str = "",
+) -> PostProcessResult:
+    """Apply corp-os-meta normalization and validation to raw extraction result.
 
     Args:
-        result: Raw dict from parse_llm_json()
-        config: Unified config dict from load_config()
-        taxonomy_path: Path to config/taxonomy.yaml
+        raw_result: Raw dict from Gemini extraction (parsed JSON)
+        source_tool: Tool identifier for frontmatter
+        source_file: Original file path/name
 
     Returns:
-        PostProcessResult with cleaned data and metadata
+        PostProcessResult with normalized data, links line, and validation status
     """
-    taxonomy = _load_taxonomy(taxonomy_path)
-    pp_config = config.get("post_processing", {})
-    normalized_terms: list[str] = []
-    unknown_terms: list[str] = []
-    truncated_fields: list[str] = []
+    # Ensure required fields for corp-os-meta
+    raw_result.setdefault("source_tool", source_tool)
+    raw_result.setdefault("source_file", source_file)
+    raw_result.setdefault("schema_version", 1)
 
-    # 1. Term normalization (simple find-replace across all string values)
-    normalizations = pp_config.get("term_normalization", {})
-    if normalizations:
-        result = _normalize_terms(result, normalizations)
+    # Map CKE field names to corp-os-meta field names if needed
+    if "content_type" in raw_result and "type" not in raw_result:
+        raw_result["type"] = raw_result.pop("content_type")
 
-    # 2. Taxonomy normalization for topics
-    if "topics" in result and isinstance(result["topics"], list):
-        result["topics"], norm, unknown = _normalize_to_taxonomy(
-            result["topics"], taxonomy.get("topics", [])
-        )
-        normalized_terms.extend(norm)
-        unknown_terms.extend(unknown)
+    # Normalize using corp-os-meta taxonomy
+    taxonomy = load_taxonomy()
+    normalized_data, changes, unknown = normalize_frontmatter(raw_result, taxonomy)
 
-    # 3. Taxonomy normalization for products
-    if "products" in result and isinstance(result["products"], list):
-        result["products"], norm, unknown = _normalize_to_taxonomy(
-            result["products"], taxonomy.get("products", [])
-        )
-        normalized_terms.extend(norm)
-        unknown_terms.extend(unknown)
+    if changes:
+        logger.info("Normalized: %s", ", ".join(changes))
+    if unknown:
+        logger.info("Unknown terms: %s", unknown)
+        _log_unknown_terms(unknown)
 
-    # 4. Cardinality caps
-    for field_name, cap in _CARDINALITY_CAPS.items():
-        if field_name in result and isinstance(result[field_name], list):
-            if len(result[field_name]) > cap:
-                logger.warning("Truncating %s: %d → %d", field_name, len(result[field_name]), cap)
-                result[field_name] = result[field_name][:cap]
-                truncated_fields.append(field_name)
+    # Validate using corp-os-meta
+    validation_result, validated_note, issues = validate_frontmatter(normalized_data)
 
-    # 5. Generate deterministic Links line
-    links_line = _build_links_line(result)
+    if issues:
+        logger.warning("Validation issues: %s", issues)
 
-    # 6. Log unknown terms for weekly review
-    if unknown_terms:
-        _append_to_taxonomy_review(unknown_terms, taxonomy_path.parent / "taxonomy_review.yaml")
-        logger.info("Unknown terms logged for review: %s", unknown_terms)
+    # Generate deterministic links line
+    links_line = ""
+    if validated_note:
+        links_line = generate_links_line(validated_note)
+    else:
+        # Quarantined — still generate links from raw data for the note
+        links_parts = []
+        for topic in normalized_data.get("topics", []):
+            links_parts.append(f"[[{topic}]]")
+        for product in normalized_data.get("products", []):
+            links_parts.append(f"[[{product}]]")
+        for person in normalized_data.get("people", []):
+            name = person.split("(")[0].strip()
+            links_parts.append(f"[[{name}]]")
+        links_line = "**Links:** " + " . ".join(links_parts) if links_parts else ""
 
     return PostProcessResult(
-        data=result,
-        normalized_terms=normalized_terms,
-        unknown_terms=unknown_terms,
-        truncated_fields=truncated_fields,
+        data=normalized_data,
         links_line=links_line,
+        validation_result=validation_result,
+        validated_note=validated_note,
+        changes=changes,
+        unknown_terms=unknown,
+        issues=issues,
     )
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _load_taxonomy(path: Path) -> dict:
-    """Load taxonomy.yaml. Return empty dict if not found."""
-    if not path.exists():
-        logger.warning("Taxonomy file not found: %s", path)
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def _normalize_to_taxonomy(
-    values: list[str],
-    taxonomy_entries: list[dict],
-) -> tuple[list[str], list[str], list[str]]:
-    """Match extracted values to canonical names via aliases.
-
-    Returns:
-        (normalized_values, which_were_normalized, which_were_unknown)
-    """
-    # Build alias → canonical lookup (case-insensitive)
-    alias_map: dict[str, str] = {}
-    for entry in taxonomy_entries:
-        canonical = entry["name"]
-        alias_map[canonical.lower()] = canonical
-        for alias in entry.get("aliases", []):
-            alias_map[alias.lower()] = canonical
-
-    normalized: list[str] = []
-    norm_log: list[str] = []
-    unknown: list[str] = []
-    seen: set[str] = set()
-
-    for val in values:
-        canonical = alias_map.get(val.lower())
-        if canonical:
-            if canonical not in seen:
-                normalized.append(canonical)
-                seen.add(canonical)
-            if val != canonical:
-                norm_log.append(f"{val} -> {canonical}")
-        else:
-            if val not in seen:
-                normalized.append(val)  # keep as-is but flag
-                seen.add(val)
-                unknown.append(val)
-
-    return normalized, norm_log, unknown
-
-
-def _normalize_terms(data, normalizations: dict):
-    """Recursively find-replace terms in all string values."""
-    if isinstance(data, str):
-        for old, new in normalizations.items():
-            data = data.replace(old, new)
-        return data
-    elif isinstance(data, dict):
-        return {k: _normalize_terms(v, normalizations) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [_normalize_terms(item, normalizations) for item in data]
-    return data
-
-
-def _build_links_line(result: dict) -> str:
-    """Build deterministic **Links:** line from topics, products, people."""
-    parts: list[str] = []
-
-    for topic in result.get("topics", []):
-        parts.append(f"[[{topic}]]")
-
-    for product in result.get("products", []):
-        parts.append(f"[[{product}]]")
-
-    for person in result.get("people", []):
-        # Strip role annotation: "Mike Geller (Presenter)" -> "Mike Geller"
-        name = person.split("(")[0].strip()
-        if name:
-            parts.append(f"[[{name}]]")
-
-    return "**Links:** " + " · ".join(parts) if parts else ""
-
-
-def _append_to_taxonomy_review(terms: list[str], review_path: Path) -> None:
-    """Append unknown terms to taxonomy_review.yaml for batch approval."""
-    data: dict = {"pending": []}
+def _log_unknown_terms(terms: list[str]):
+    """Append unknown terms to local review file for batch approval."""
+    review_path = Path("config/taxonomy_review.yaml")
+    data = {"pending": []}
     if review_path.exists():
         with open(review_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {"pending": []}
 
     existing = set(data.get("pending", []))
-    added = False
+    added = []
     for term in terms:
         if term not in existing:
             data["pending"].append(term)
-            added = True
+            added.append(term)
 
     if added:
         with open(review_path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+        logger.info("Added to taxonomy_review.yaml: %s", added)
