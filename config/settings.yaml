@@ -283,17 +283,6 @@ transcription:
     overlap_seconds: 5.0
 
 # ======================
-# POST-PROCESSING
-# ======================
-
-post_processing:
-  term_normalization:
-    "Yonder": "Blue Yonder"
-    "BY Platform": "Blue Yonder Platform"
-    "BY ": "Blue Yonder "
-    "JDA": "Blue Yonder (formerly JDA)"
-
-# ======================
 # CONTENT LIMITS
 # ======================
 

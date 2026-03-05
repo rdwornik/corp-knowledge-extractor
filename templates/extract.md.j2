@@ -11,6 +11,7 @@ quality: "{{ quality }}"
 {% if duration_min %}duration_min: {{ duration_min }}
 {% endif %}model: "{{ model }}"
 tokens_used: {{ tokens_used }}
+source_tool: "{{ source_tool | default('knowledge-extractor') }}"
 ---
 
 # {{ title }}

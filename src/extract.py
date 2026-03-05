@@ -28,7 +28,7 @@ from pathlib import Path
 from src.inventory import SourceFile, FileType
 from src.frames.sampler import SampledFrame
 from src.utils import parse_llm_json
-from src.post_process import post_process_extraction
+from src.post_process import post_process_extraction, PostProcessResult
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,8 @@ class ExtractionResult:
     raw_json: dict = field(default_factory=dict)
     tokens_used: int = 0
     links_line: str = ""          # Deterministic Links line from post-processing
+    source_tool: str = "knowledge-extractor"
+    validation_result: str = "valid"  # "valid", "warnings", "quarantine"
 
 
 class ExtractionError(Exception):
@@ -322,15 +324,17 @@ def extract_knowledge(
     data = _parse_response(response_text, file)
 
     # Post-process: normalize terms, apply taxonomy, cap cardinality, build links line
-    taxonomy_path = Path(__file__).parent.parent / "config" / "taxonomy.yaml"
-    pp = post_process_extraction(data, config, taxonomy_path)
-    if pp.normalized_terms:
-        log.debug("Normalized: %s", pp.normalized_terms)
-    if pp.truncated_fields:
-        log.debug("Truncated fields: %s", pp.truncated_fields)
+    pp = post_process_extraction(
+        raw_result=data,
+        source_tool="knowledge-extractor",
+        source_file=str(file.path),
+    )
+    if pp.changes:
+        log.debug("Normalized: %s", pp.changes)
 
     result = _result_from_json(pp.data, file, tokens)
     result.links_line = pp.links_line
+    result.validation_result = pp.validation_result.value
 
     log.info(
         "Extracted: '%s' | slides=%d | topics=%s | tokens=%d",
