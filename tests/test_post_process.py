@@ -209,3 +209,107 @@ def test_product_taxonomy_normalization():
     assert "Blue Yonder Platform" in result.data["products"]
     # At least one change logged for the normalization
     assert any("Blue Yonder Platform" in c for c in result.changes)
+
+
+# ---------------------------------------------------------------------------
+# Schema v2 tests — knowledge dimensions
+# ---------------------------------------------------------------------------
+
+def test_domains_normalized():
+    """Domains should be normalized via corp-os-meta."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Pricing Update",
+            "date": "2026-03-01",
+            "type": "presentation",
+            "topics": ["SLA"],
+            "domains": ["GTM", "pricing"],
+            "summary": "Pricing changes.",
+        },
+        source_file="test.mkv",
+    )
+    assert "Go-to-Market" in result.data["domains"]
+    assert "Commercials" in result.data["domains"]
+
+
+def test_confidentiality_defaults_to_internal():
+    """Missing confidentiality should default to internal."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": [],
+            "summary": "Test.",
+        },
+        source_file="test.md",
+    )
+    assert result.data["confidentiality"] == "internal"
+
+
+def test_schema_v2_defaults():
+    """All v2 fields should have safe defaults."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Minimal",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": [],
+            "summary": "Minimal.",
+        },
+        source_file="test.md",
+    )
+    assert result.data["authority"] == "tribal"
+    assert result.data["layer"] == "learning"
+    assert result.data["source_type"] == "documentation"
+    assert result.data["domains"] == []
+    assert result.data["schema_version"] == 2
+
+
+def test_valid_to_auto_calculated():
+    """Domains with expiry rules should produce valid_to."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Pricing Note",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": ["Pricing"],
+            "domains": ["Commercials"],
+            "summary": "New pricing tiers.",
+        },
+        source_file="test.md",
+    )
+    # Commercials domain triggers valid_to calculation
+    assert result.data.get("valid_to") is not None
+
+
+def test_domains_cap():
+    """Domains should be capped at 3."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Many Domains",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": [],
+            "domains": ["Product", "Commercials", "Competitive", "Go-to-Market", "Security"],
+            "summary": "Test.",
+        },
+        source_file="test.md",
+    )
+    assert len(result.data["domains"]) <= 3
+
+
+def test_confidentiality_passthrough():
+    """LLM-provided confidentiality should be preserved."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Secret Deal",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": [],
+            "confidentiality": "restricted",
+            "summary": "M&A details.",
+        },
+        source_file="test.md",
+    )
+    assert result.data["confidentiality"] == "restricted"

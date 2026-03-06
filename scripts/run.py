@@ -254,7 +254,7 @@ def process(input_path: str | None, output: str, name: str | None):
     for stem, result in extracts.items():
         extract_json_path = extract_dir / f"{stem}.json"
         extract_json_path.write_text(json.dumps({
-            "schema_version": 1,
+            "schema_version": 2,
             "id": stem,
             "source_file": str(result.source_file.path),
             "title": result.title,
@@ -262,11 +262,18 @@ def process(input_path: str | None, output: str, name: str | None):
             "topics": result.topics,
             "products": result.products,
             "people": result.people,
+            "domains": result.domains,
             "key_points": result.key_points,
             "content_type": result.content_type,
+            "source_type": result.source_type,
+            "layer": result.layer,
+            "confidentiality": result.confidentiality,
+            "authority": result.authority,
+            "client": result.client,
             "slides_count": len(result.slides),
             "links_line": result.links_line,
             "validation_result": result.validation_result,
+            "valid_to": result.raw_json.get("valid_to"),
             "processed_at": _dt.now().isoformat(),
         }, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
 
