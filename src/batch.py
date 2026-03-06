@@ -30,23 +30,27 @@ _DOC_TYPE_MAP = {
 class BatchProcessor:
     """Process a manifest of files through the extraction pipeline."""
 
-    def __init__(self, manifest: Manifest, config: dict, max_rpm: int = 100, resume: bool = False):
+    def __init__(self, manifest: Manifest, config: dict, max_rpm: int = 100,
+                 resume: bool = False, force_tier: int | None = None):
         self.manifest = manifest
         self.config = config
         self.max_rpm = max_rpm
         self.resume = resume
+        self.force_tier = force_tier
         self.statuses: dict[str, dict] = {}
         self._last_request_time = 0.0
         self._min_interval = 60.0 / max_rpm
+        self._cost_total = 0.0
 
     def process_all(self) -> dict:
         """Process all files in manifest. Returns summary dict."""
         from src.inventory import SourceFile, FileType, scan_input
-        from src.extract import extract_knowledge, ExtractionError
+        from src.extract import extract_knowledge, extract_from_text, extract_local, ExtractionError
         from src.correlate import correlate_files
         from src.synthesize import build_package
         from src.frames.sampler import sample_frames
         from src.compress import needs_compression, compress_video
+        from src.tier_router import route_tier, Tier
 
         output_dir = self.manifest.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -56,7 +60,8 @@ class BatchProcessor:
         if self.resume:
             existing_status = load_status(output_dir)
 
-        summary = {"total": len(self.manifest.files), "done": 0, "error": 0, "skipped": 0}
+        summary = {"total": len(self.manifest.files), "done": 0, "error": 0, "skipped": 0,
+                   "cost": 0.0, "tiers": {1: 0, 2: 0, 3: 0}}
 
         for i, entry in enumerate(self.manifest.files, 1):
             logger.info("[%d/%d] Processing: %s", i, summary["total"], entry.name)
@@ -86,17 +91,23 @@ class BatchProcessor:
             self._rate_limit()
 
             try:
-                result = self._process_single(
+                tier_used = self._process_single(
                     entry, output_dir, FileType, SourceFile,
-                    extract_knowledge, correlate_files, build_package,
+                    extract_knowledge, extract_from_text, extract_local,
+                    correlate_files, build_package,
                     sample_frames, needs_compression, compress_video,
+                    route_tier, Tier,
                 )
                 self.statuses[entry.id] = {
                     "status": FileStatus.DONE.value,
                     "processed_at": datetime.now().isoformat(),
+                    "tier": tier_used,
                 }
                 summary["done"] += 1
-                logger.info("  Done: %s", entry.name)
+                summary["tiers"][tier_used] = summary["tiers"].get(tier_used, 0) + 1
+                from src.tier_router import TIER_COSTS, Tier as _T
+                summary["cost"] += TIER_COSTS[_T(tier_used)]
+                logger.info("  Done (Tier %d): %s", tier_used, entry.name)
 
             except Exception as e:
                 logger.error("  Error processing %s: %s", entry.name, e, exc_info=True)
@@ -110,8 +121,9 @@ class BatchProcessor:
             save_status(output_dir, self.statuses)
 
         logger.info(
-            "Batch complete: %d done, %d errors, %d skipped",
+            "Batch complete: %d done, %d errors, %d skipped | cost: $%.4f | tiers: %s",
             summary["done"], summary["error"], summary["skipped"],
+            summary["cost"], summary["tiers"],
         )
         return summary
 
@@ -122,13 +134,17 @@ class BatchProcessor:
         FileType,
         SourceFile,
         extract_knowledge,
+        extract_from_text,
+        extract_local,
         correlate_files,
         build_package,
         sample_frames,
         needs_compression,
         compress_video,
-    ) -> None:
-        """Process a single manifest entry through the full pipeline."""
+        route_tier,
+        Tier,
+    ) -> int:
+        """Process a single manifest entry through the full pipeline. Returns tier used."""
         from scripts.run import keep_slide_frames
 
         # Build SourceFile from manifest entry
@@ -144,20 +160,30 @@ class BatchProcessor:
         pkg_dir = output_dir / entry.id
         output_frames_dir = pkg_dir / "source" / "frames"
 
-        # Compress video if needed
-        if file_type == FileType.VIDEO and needs_compression(source_file.path, self.config):
-            compressed_out = pkg_dir / "source" / "video" / source_file.path.name
-            compress_video(source_file.path, compressed_out, self.config)
+        # Route to appropriate tier
+        decision = route_tier(source_file, force_tier=self.force_tier)
+        logger.info("  Tier %d: %s (%s)", decision.tier.value, entry.name, decision.reason)
 
-        # Sample frames for video
+        # Compress video if needed (Tier 3 only)
+        if file_type == FileType.VIDEO and decision.tier == Tier.MULTIMODAL:
+            if needs_compression(source_file.path, self.config):
+                compressed_out = pkg_dir / "source" / "video" / source_file.path.name
+                compress_video(source_file.path, compressed_out, self.config)
+
+        # Sample frames for video (Tier 3 only)
         sampled_frames = None
-        if file_type == FileType.VIDEO:
+        if file_type == FileType.VIDEO and decision.tier == Tier.MULTIMODAL:
             temp_dir = pkg_dir / "temp_frames" / source_file.name
             sampled_frames = sample_frames(source_file.path, temp_dir, self.config)
             logger.info("  Sampled %d frames", len(sampled_frames))
 
-        # Extract knowledge via Gemini
-        result = extract_knowledge(source_file, self.config, sampled_frames=sampled_frames)
+        # Extract knowledge via appropriate tier
+        if decision.tier == Tier.LOCAL and decision.text_result:
+            result = extract_local(source_file, decision.text_result)
+        elif decision.tier == Tier.TEXT_AI and decision.text_result:
+            result = extract_from_text(source_file, self.config, decision.text_result)
+        else:
+            result = extract_knowledge(source_file, self.config, sampled_frames=sampled_frames)
 
         # Keep slide frames, cleanup temp
         if result.slides and sampled_frames:
@@ -178,6 +204,8 @@ class BatchProcessor:
 
         # Write machine-readable extract.json
         self._write_extract_json(entry, result, pkg_dir)
+
+        return decision.tier.value
 
     def _write_extract_json(self, entry: ManifestEntry, result, pkg_dir: Path):
         """Write machine-readable extract.json for CPE consumption."""

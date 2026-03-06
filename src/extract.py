@@ -27,6 +27,7 @@ from pathlib import Path
 
 from src.inventory import SourceFile, FileType
 from src.frames.sampler import SampledFrame
+from src.text_extract import TextExtractionResult
 from src.utils import parse_llm_json
 from src.post_process import post_process_extraction, PostProcessResult
 from src.taxonomy_prompt import get_taxonomy_for_prompt
@@ -358,4 +359,123 @@ def extract_knowledge(
         "Extracted: '%s' | slides=%d | topics=%s | tokens=%d",
         result.title, len(result.slides), result.topics[:3], tokens,
     )
+    return result
+
+
+def extract_from_text(
+    file: SourceFile,
+    config: dict,
+    text_result: TextExtractionResult,
+) -> ExtractionResult:
+    """
+    Tier 2: Send pre-extracted text to Gemini 2.0 Flash (text-only, cheaper).
+
+    Uses the cheaper text model since we already have good text content
+    and don't need multimodal processing.
+
+    Args:
+        file: SourceFile metadata
+        config: Unified config dict
+        text_result: Pre-extracted text from local extraction (Tier 1)
+
+    Returns:
+        ExtractionResult with AI-structured knowledge
+    """
+    from google.genai import types
+
+    client = _get_client(config)
+    model = "gemini-2.0-flash"  # Always use cheaper model for text-only
+
+    prompt = _get_prompt(config, "extract")
+
+    # Truncate very long text to stay within token limits
+    text_content = text_result.text[:80000]
+
+    log.info(
+        "Extracting %s via text-only AI (%d chars, model=%s)...",
+        file.path.name, len(text_content), model,
+    )
+
+    contents = [types.Part.from_text(
+        text=f"{prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
+    )]
+
+    response = client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+        ),
+    )
+
+    response_text = response.text or ""
+    tokens = 0
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        tokens = getattr(response.usage_metadata, "total_token_count", 0) or 0
+
+    data = _parse_response(response_text, file)
+
+    # Post-process via corp-os-meta
+    pp = post_process_extraction(
+        raw_result=data,
+        source_tool="knowledge-extractor",
+        source_file=str(file.path),
+    )
+
+    result = _result_from_json(pp.data, file, tokens)
+    result.links_line = pp.links_line
+    result.validation_result = pp.validation_result.value
+
+    log.info(
+        "Tier 2 extracted: '%s' | topics=%s | tokens=%d",
+        result.title, result.topics[:3], tokens,
+    )
+    return result
+
+
+def extract_local(
+    file: SourceFile,
+    text_result: TextExtractionResult,
+) -> ExtractionResult:
+    """
+    Tier 1: Build ExtractionResult from locally-extracted text only (FREE).
+
+    No API call. Uses the file name as title and the raw text as summary.
+    Still post-processes through corp-os-meta for normalization.
+
+    Args:
+        file: SourceFile metadata
+        text_result: Pre-extracted text from local extraction
+
+    Returns:
+        ExtractionResult with basic structure (no AI insight)
+    """
+    log.info(
+        "Local extraction for %s (%d chars, no API call)...",
+        file.path.name, text_result.char_count,
+    )
+
+    # Build a minimal raw result for post-processing
+    raw_result = {
+        "title": file.name,
+        "summary": text_result.text[:2000],
+        "topics": [],
+        "products": [],
+        "people": [],
+        "type": file.type.value,
+        "language": "en",
+        "quality": "local",
+    }
+
+    pp = post_process_extraction(
+        raw_result=raw_result,
+        source_tool="knowledge-extractor",
+        source_file=str(file.path),
+    )
+
+    result = _result_from_json(pp.data, file, tokens=0)
+    result.links_line = pp.links_line
+    result.validation_result = pp.validation_result.value
+
+    log.info("Tier 1 local extraction: '%s'", result.title)
     return result

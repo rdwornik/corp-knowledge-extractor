@@ -27,7 +27,7 @@ load_dotenv()
 
 from config.config_loader import load_config
 from src.inventory import scan_input, FileType
-from src.extract import extract_knowledge, ExtractionError
+from src.extract import extract_knowledge, extract_from_text, extract_local, ExtractionError
 from src.correlate import correlate_files
 from src.synthesize import build_package
 from src.reextract import reextract_package
@@ -129,7 +129,10 @@ def cli(ctx):
 @click.argument("input_path", type=click.Path(exists=True), default=None, required=False)
 @click.option("--output", default="output", show_default=True, help="Output directory")
 @click.option("--name", default=None, help="Package name (defaults to input name)")
-def process(input_path: str | None, output: str, name: str | None):
+@click.option("--tier", type=click.IntRange(1, 3), default=None,
+              help="Force extraction tier: 1=local, 2=text-AI, 3=multimodal (default: auto)")
+@click.option("--dry-run-tiers", is_flag=True, help="Show tier routing + cost estimate without processing")
+def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool):
     """Process a file or folder into a knowledge package.
 
     INPUT_PATH defaults to the data/input/ directory from config if not given.
@@ -177,6 +180,28 @@ def process(input_path: str | None, output: str, name: str | None):
     for f in files:
         _print(f"  {f.type.value:12s}  {f.path.name}  ({f.size_bytes / 1024 / 1024:.1f} MB)")
 
+    # --- 1b. Tier routing ---
+    from src.tier_router import route_tier, Tier, estimate_batch_cost
+
+    if dry_run_tiers:
+        estimate = estimate_batch_cost(files, force_tier=tier)
+        _print("\n=== TIER ROUTING ESTIMATE ===")
+        for f, decision in estimate["decisions"]:
+            tier_label = {1: "LOCAL (free)", 2: "TEXT-AI ($0.001)", 3: "MULTIMODAL ($0.03)"}
+            _print(f"  Tier {decision.tier.value} {tier_label[decision.tier.value]:20s} {f.path.name}")
+            _print(f"         {decision.reason}")
+        _print(f"\nTier 1 (local):      {estimate['tier_counts'].get(1, 0)} files")
+        _print(f"Tier 2 (text-AI):    {estimate['tier_counts'].get(2, 0)} files")
+        _print(f"Tier 3 (multimodal): {estimate['tier_counts'].get(3, 0)} files")
+        _print(f"Estimated total cost: ${estimate['total_cost']:.4f}")
+        return
+
+    tier_decisions = {}
+    for f in files:
+        decision = route_tier(f, force_tier=tier)
+        tier_decisions[f.name] = decision
+        _print(f"  Tier {decision.tier.value}: {f.path.name} ({decision.reason})")
+
     # --- 2. Compress videos ---
     for f in files:
         if f.type == FileType.VIDEO:
@@ -196,19 +221,28 @@ def process(input_path: str | None, output: str, name: str | None):
             sampled[f.name] = frames
             _print(f"    {len(frames)} frames sampled")
 
-    # --- 4. Extract knowledge via Gemini ---
-    _print("\nExtracting knowledge with Gemini...")
+    # --- 4. Extract knowledge (tiered) ---
+    _print("\nExtracting knowledge...")
     extracts: dict = {}
     failed: list[str] = []
+    cost_total = 0.0
 
     for f in files:
+        decision = tier_decisions[f.name]
         frames = sampled.get(f.name)
         frame_count = len(frames) if frames else 0
-        label = f.path.name + (f" + {frame_count} frames" if frame_count else "")
+        tier_label = f"[Tier {decision.tier.value}]"
+        label = f"{tier_label} {f.path.name}" + (f" + {frame_count} frames" if frame_count else "")
         _print(f"  -> {label}")
         try:
-            result = extract_knowledge(f, config, sampled_frames=frames)
+            if decision.tier == Tier.LOCAL and decision.text_result:
+                result = extract_local(f, decision.text_result)
+            elif decision.tier == Tier.TEXT_AI and decision.text_result:
+                result = extract_from_text(f, config, decision.text_result)
+            else:
+                result = extract_knowledge(f, config, sampled_frames=frames)
             extracts[f.name] = result
+            cost_total += decision.estimated_cost
             slide_info = f" | {len(result.slides)} slides identified" if result.slides else ""
             _print(f"    [OK] {result.title}{slide_info}")
         except ExtractionError as exc:
@@ -279,13 +313,17 @@ def process(input_path: str | None, output: str, name: str | None):
 
     _print(f"\n[green]Done![/green]" if HAS_RICH else "\nDone!")
     _print(f"Package: {pkg_path}")
+    if cost_total > 0:
+        _print(f"Estimated API cost: ${cost_total:.4f}")
 
 
 @cli.command("process-manifest")
 @click.argument("manifest_path", type=click.Path(exists=True))
 @click.option("--resume", is_flag=True, help="Skip already-completed files")
 @click.option("--max-rpm", default=100, show_default=True, help="Max requests per minute to Gemini API")
-def process_manifest(manifest_path: str, resume: bool, max_rpm: int):
+@click.option("--tier", type=click.IntRange(1, 3), default=None,
+              help="Force extraction tier: 1=local, 2=text-AI, 3=multimodal (default: auto)")
+def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int | None):
     """Process multiple files from a JSON manifest.
 
     Used by corp-project-extractor for batch extraction.
@@ -309,7 +347,7 @@ def process_manifest(manifest_path: str, resume: bool, max_rpm: int):
                else "Resume mode: skipping completed files")
     _print("")
 
-    processor = BatchProcessor(manifest, config, max_rpm=max_rpm, resume=resume)
+    processor = BatchProcessor(manifest, config, max_rpm=max_rpm, resume=resume, force_tier=tier)
     summary = processor.process_all()
 
     _print("")
@@ -320,6 +358,10 @@ def process_manifest(manifest_path: str, resume: bool, max_rpm: int):
     _print(err_str)
     _print(skip_str)
     _print(f"Total: {summary['total']}")
+    tiers = summary.get("tiers", {})
+    if any(tiers.values()):
+        _print(f"\nTiers: local={tiers.get(1, 0)}, text-AI={tiers.get(2, 0)}, multimodal={tiers.get(3, 0)}")
+        _print(f"Estimated API cost: ${summary.get('cost', 0):.4f}")
 
     if summary["error"] > 0:
         status_path = manifest.output_dir / "status.json"
