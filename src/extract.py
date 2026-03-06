@@ -384,7 +384,7 @@ def extract_from_text(
     from google.genai import types
 
     client = _get_client(config)
-    model = "gemini-2.0-flash"  # Always use cheaper model for text-only
+    model = "gemini-2.5-flash"  # Text-only input: no vision tokens charged
 
     prompt = _get_prompt(config, "extract")
 
