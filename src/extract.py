@@ -69,6 +69,13 @@ class ExtractionResult:
     links_line: str = ""          # Deterministic Links line from post-processing
     source_tool: str = "knowledge-extractor"
     validation_result: str = "valid"  # "valid", "warnings", "quarantine"
+    # Schema v2 knowledge dimensions
+    source_type: str = "documentation"
+    layer: str = "learning"
+    domains: list[str] = field(default_factory=list)
+    confidentiality: str = "internal"
+    authority: str = "tribal"
+    client: str | None = None
 
 
 class ExtractionError(Exception):
@@ -171,6 +178,12 @@ def _result_from_json(data: dict, source_file: SourceFile, tokens: int) -> Extra
         slides=_slides_from_json(data.get("slides")),
         raw_json=data,
         tokens_used=tokens,
+        source_type=data.get("source_type") or "documentation",
+        layer=data.get("layer") or "learning",
+        domains=data.get("domains") or [],
+        confidentiality=data.get("confidentiality") or "internal",
+        authority=data.get("authority") or "tribal",
+        client=data.get("client"),
     )
 
 

@@ -216,6 +216,13 @@ def build_package(
             tokens_used=result.tokens_used,
             links_line=result.links_line,
             source_tool=result.source_tool,
+            source_type=result.source_type,
+            layer=result.layer,
+            domains=result.domains,
+            confidentiality=result.confidentiality,
+            authority=result.authority,
+            client=result.client,
+            valid_to=result.raw_json.get("valid_to"),
         )
         out_path = extract_dir / f"{stem}.md"
         out_path.write_text(content, encoding="utf-8")

@@ -3,15 +3,23 @@ source: "{{ source_file }}"
 type: "{{ content_type }}"
 title: "{{ title }}"
 date: {{ date }}
+source_type: "{{ source_type | default('documentation') }}"
+layer: "{{ layer | default('learning') }}"
+domains: {{ domains | default([]) | tojson }}
 topics: {{ topics | tojson }}
 people: {{ people | tojson }}
 products: {{ products | tojson }}
-language: "{{ language }}"
+confidentiality: "{{ confidentiality | default('internal') }}"
+authority: "{{ authority | default('tribal') }}"
+{% if client %}client: "{{ client }}"
+{% endif %}{% if valid_to %}valid_to: {{ valid_to }}
+{% endif %}language: "{{ language }}"
 quality: "{{ quality }}"
 {% if duration_min %}duration_min: {{ duration_min }}
 {% endif %}model: "{{ model }}"
 tokens_used: {{ tokens_used }}
 source_tool: "{{ source_tool | default('knowledge-extractor') }}"
+schema_version: 2
 ---
 
 # {{ title }}

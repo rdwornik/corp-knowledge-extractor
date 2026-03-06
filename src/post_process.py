@@ -50,11 +50,18 @@ def post_process_extraction(
     # Ensure required fields for corp-os-meta
     raw_result.setdefault("source_tool", source_tool)
     raw_result.setdefault("source_file", source_file)
-    raw_result.setdefault("schema_version", 1)
+    raw_result.setdefault("schema_version", 2)
 
     # Map CKE field names to corp-os-meta field names if needed
     if "content_type" in raw_result and "type" not in raw_result:
         raw_result["type"] = raw_result.pop("content_type")
+
+    # Schema v2 defaults — safe values if LLM didn't produce them
+    raw_result.setdefault("confidentiality", "internal")
+    raw_result.setdefault("authority", "tribal")
+    raw_result.setdefault("layer", "learning")
+    raw_result.setdefault("source_type", "documentation")
+    raw_result.setdefault("domains", [])
 
     # Normalize using corp-os-meta taxonomy
     taxonomy = load_taxonomy()
