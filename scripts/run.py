@@ -19,6 +19,7 @@ from pathlib import Path
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import json
 import click
 from dotenv import load_dotenv
 
@@ -247,8 +248,75 @@ def process(input_path: str | None, output: str, name: str | None):
     _print("\nBuilding package...")
     pkg_path = build_package(groups, extracts, output_p, package_name, config)
 
+    # --- 8. Write machine-readable extract.json per file ---
+    from datetime import datetime as _dt
+    extract_dir = pkg_path / "extract"
+    for stem, result in extracts.items():
+        extract_json_path = extract_dir / f"{stem}.json"
+        extract_json_path.write_text(json.dumps({
+            "schema_version": 1,
+            "id": stem,
+            "source_file": str(result.source_file.path),
+            "title": result.title,
+            "summary": result.summary,
+            "topics": result.topics,
+            "products": result.products,
+            "people": result.people,
+            "key_points": result.key_points,
+            "content_type": result.content_type,
+            "slides_count": len(result.slides),
+            "links_line": result.links_line,
+            "validation_result": result.validation_result,
+            "processed_at": _dt.now().isoformat(),
+        }, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+
     _print(f"\n[green]Done![/green]" if HAS_RICH else "\nDone!")
     _print(f"Package: {pkg_path}")
+
+
+@cli.command("process-manifest")
+@click.argument("manifest_path", type=click.Path(exists=True))
+@click.option("--resume", is_flag=True, help="Skip already-completed files")
+@click.option("--max-rpm", default=100, show_default=True, help="Max requests per minute to Gemini API")
+def process_manifest(manifest_path: str, resume: bool, max_rpm: int):
+    """Process multiple files from a JSON manifest.
+
+    Used by corp-project-extractor for batch extraction.
+    Initializes Gemini client once, processes all files sequentially.
+
+    Example:
+        python scripts/run.py process-manifest manifest.json --resume --max-rpm 80
+    """
+    from src.manifest import Manifest
+    from src.batch import BatchProcessor
+
+    config = load_config()
+    manifest = Manifest.from_file(Path(manifest_path))
+
+    _print(f"\n{'[bold]Batch processing:[/bold]' if HAS_RICH else 'Batch processing:'}"
+           f" {len(manifest.files)} files from project '{manifest.project}'")
+    _print(f"Output:     {manifest.output_dir}")
+    _print(f"Rate limit: {max_rpm} RPM")
+    if resume:
+        _print("[yellow]Resume mode: skipping completed files[/yellow]" if HAS_RICH
+               else "Resume mode: skipping completed files")
+    _print("")
+
+    processor = BatchProcessor(manifest, config, max_rpm=max_rpm, resume=resume)
+    summary = processor.process_all()
+
+    _print("")
+    done_str = f"[bold green]Done:[/bold green] {summary['done']}" if HAS_RICH else f"Done: {summary['done']}"
+    err_str = f"[bold red]Errors:[/bold red] {summary['error']}" if HAS_RICH else f"Errors: {summary['error']}"
+    skip_str = f"[bold yellow]Skipped:[/bold yellow] {summary['skipped']}" if HAS_RICH else f"Skipped: {summary['skipped']}"
+    _print(done_str)
+    _print(err_str)
+    _print(skip_str)
+    _print(f"Total: {summary['total']}")
+
+    if summary["error"] > 0:
+        status_path = manifest.output_dir / "status.json"
+        _print(f"\n{'[red]' if HAS_RICH else ''}Check {status_path} for error details{'[/red]' if HAS_RICH else ''}")
 
 
 @cli.command()
