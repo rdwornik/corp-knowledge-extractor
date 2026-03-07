@@ -6,15 +6,16 @@ Tier 1: Local text extraction only (FREE)
     - Well-structured documents with good text extraction quality
     - Still post-processed through corp-os-meta for normalization
 
-Tier 2: Text-only AI — Gemini 2.0 Flash ($0.001/file)
+Tier 2: Text-only AI — Gemini 2.5 Flash ($0.001/file)
     - Documents with good local text but needing AI for structure/insight
-    - PDF, DOCX, PPTX, XLSX with extractable text
-    - Sends extracted text to cheaper/faster model
+    - PPTX, XLSX, DOCX always here (Gemini rejects their MIME types)
+    - PDF with extractable text
+    - Sends extracted text only (no vision tokens)
 
 Tier 3: Full multimodal AI — Gemini 2.5 Flash ($0.02-0.05/file)
     - Videos, audio (always need multimodal)
-    - Image-heavy documents (scanned PDFs, visual PPTX)
-    - Files where local extraction failed or is poor quality
+    - PDF with poor/no text (scanned documents)
+    - Only formats whose MIME type Gemini accepts for upload
 
 Usage:
     from src.tier_router import route_tier, Tier, TierDecision
@@ -97,24 +98,38 @@ def route_tier(
             model=TIER_MODELS[Tier.MULTIMODAL],
         )
 
+    # PPTX, XLSX, DOCX — Gemini API rejects these MIME types for upload,
+    # so they can never go to Tier 3 multimodal. Always extract text locally
+    # and route to Tier 2 (text-only AI) or Tier 1 (local).
+    upload_blocked = file.type in (FileType.SLIDES, FileType.SPREADSHEET, FileType.DOCUMENT) and \
+        file.path.suffix.lower() in (".pptx", ".xlsx", ".docx")
+
     # Try local text extraction
     text_result = extract_text(file.path)
 
-    # No text extracted → multimodal
+    # For upload-blocked formats, cap at Tier 2 even if text is poor
+    if upload_blocked:
+        if text_result.extraction_quality == "none":
+            return TierDecision(
+                tier=Tier.TEXT_AI,
+                reason=f"{file.path.suffix} upload blocked by API; text extraction failed, sending what we have",
+                estimated_cost=TIER_COSTS[Tier.TEXT_AI],
+                model=TIER_MODELS[Tier.TEXT_AI],
+                text_result=text_result,
+            )
+        return TierDecision(
+            tier=Tier.TEXT_AI,
+            reason=f"{file.path.suffix} upload blocked by API; using extracted text ({text_result.char_count} chars)",
+            estimated_cost=TIER_COSTS[Tier.TEXT_AI],
+            model=TIER_MODELS[Tier.TEXT_AI],
+            text_result=text_result,
+        )
+
+    # No text extracted → multimodal (PDF, other formats)
     if text_result.extraction_quality == "none":
         return TierDecision(
             tier=Tier.MULTIMODAL,
             reason=f"local extraction failed ({text_result.error or 'no text'})",
-            estimated_cost=TIER_COSTS[Tier.MULTIMODAL],
-            model=TIER_MODELS[Tier.MULTIMODAL],
-            text_result=text_result,
-        )
-
-    # Image-heavy presentations → multimodal (visuals matter)
-    if file.type == FileType.SLIDES and text_result.has_images:
-        return TierDecision(
-            tier=Tier.MULTIMODAL,
-            reason="slides with images need visual analysis",
             estimated_cost=TIER_COSTS[Tier.MULTIMODAL],
             model=TIER_MODELS[Tier.MULTIMODAL],
             text_result=text_result,

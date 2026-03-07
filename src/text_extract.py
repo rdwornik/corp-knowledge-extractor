@@ -98,22 +98,33 @@ def _extract_pdf(path: Path) -> TextExtractionResult:
 
     pages_text = []
     has_images = False
+    had_none_pages = False
 
     with pdfplumber.open(path) as pdf:
         page_count = len(pdf.pages)
         for page in pdf.pages:
-            text = page.extract_text() or ""
+            try:
+                text = page.extract_text()
+            except Exception:
+                text = None
+            if text is None:
+                had_none_pages = True
+                text = ""
             pages_text.append(text)
             if page.images:
                 has_images = True
 
     full_text = "\n\n".join(pages_text)
+    quality = _assess_quality(full_text, page_count)
+    # Downgrade to partial if some pages returned None
+    if had_none_pages and quality == "good":
+        quality = "partial"
     return TextExtractionResult(
         text=full_text,
         char_count=len(full_text),
         page_count=page_count,
         has_images=has_images,
-        extraction_quality=_assess_quality(full_text, page_count),
+        extraction_quality=quality,
         extractor="pdfplumber",
     )
 
@@ -185,9 +196,12 @@ def _extract_xlsx(path: Path) -> TextExtractionResult:
         ws = wb[sheet_name]
         rows = []
         for row in ws.iter_rows(values_only=True):
-            cells = [str(c) for c in row if c is not None]
-            if cells:
-                rows.append(" | ".join(cells))
+            if row is None:
+                continue
+            cells = [str(c) if c is not None else "" for c in row]
+            joined = " | ".join(c for c in cells if c)
+            if joined:
+                rows.append(joined)
         if rows:
             sheets_text.append(f"## {sheet_name}\n" + "\n".join(rows))
 
