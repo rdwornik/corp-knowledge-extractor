@@ -77,6 +77,7 @@ class ExtractionResult:
     confidentiality: str = "internal"
     authority: str = "tribal"
     client: str | None = None
+    project: str | None = None
 
 
 class ExtractionError(Exception):

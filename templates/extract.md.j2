@@ -12,6 +12,7 @@ products: {{ products | tojson_raw }}
 confidentiality: "{{ confidentiality | default('internal') }}"
 authority: "{{ authority | default('tribal') }}"
 {% if client %}client: "{{ client }}"
+{% endif %}{% if project %}project: "{{ project }}"
 {% endif %}{% if valid_to %}valid_to: {{ valid_to }}
 {% endif %}language: "{{ language }}"
 quality: "{{ quality }}"

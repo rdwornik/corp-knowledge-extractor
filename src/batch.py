@@ -195,6 +195,12 @@ class BatchProcessor:
                     if sf.path.exists():
                         sf.path.unlink()
 
+        # Inject manifest client/project into result so they flow to templates
+        if entry.client:
+            result.client = entry.client
+        if entry.project:
+            result.project = entry.project
+
         # Correlate (single file → single group)
         extracts = {source_file.name: result}
         groups = correlate_files([source_file], extracts)

@@ -229,6 +229,7 @@ def build_package(
             confidentiality=result.confidentiality,
             authority=result.authority,
             client=result.client,
+            project=result.project,
             valid_to=result.raw_json.get("valid_to"),
         )
         out_path = extract_dir / f"{stem}.md"

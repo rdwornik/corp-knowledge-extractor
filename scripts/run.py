@@ -304,6 +304,7 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
             "confidentiality": result.confidentiality,
             "authority": result.authority,
             "client": result.client,
+            "project": result.project,
             "slides_count": len(result.slides),
             "links_line": result.links_line,
             "validation_result": result.validation_result,
