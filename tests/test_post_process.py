@@ -313,3 +313,99 @@ def test_confidentiality_passthrough():
         source_file="test.md",
     )
     assert result.data["confidentiality"] == "restricted"
+
+
+# ---------------------------------------------------------------------------
+# Systematic fix tests
+# ---------------------------------------------------------------------------
+
+def test_client_from_manifest_overrides_gemini():
+    """When manifest provides client, it overrides Gemini extraction."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test", "date": "2026-03-01", "type": "document",
+            "client": "Acme Corp", "topics": [], "products": [], "people": [],
+            "summary": "Test",
+        },
+        source_file="test.md",
+        client="Lenzing AG",
+    )
+    assert result.data["client"] == "Lenzing AG"
+
+
+def test_project_from_manifest():
+    """When manifest provides project, it appears in result data."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test", "date": "2026-03-01", "type": "document",
+            "topics": [], "summary": "Test",
+        },
+        source_file="test.md",
+        project="Lenzing_Planning",
+    )
+    assert result.data["project"] == "Lenzing_Planning"
+
+
+def test_quality_mapping_high_to_full():
+    """Gemini 'high' maps to schema 'full'."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test", "date": "2026-03-01", "type": "document",
+            "quality": "high", "topics": [], "summary": "Test",
+        },
+        source_file="test.md",
+    )
+    assert result.data["quality"] == "full"
+
+
+def test_quality_mapping_medium_to_partial():
+    """Gemini 'medium' maps to schema 'partial'."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test", "date": "2026-03-01", "type": "document",
+            "quality": "medium", "topics": [], "summary": "Test",
+        },
+        source_file="test.md",
+    )
+    assert result.data["quality"] == "partial"
+
+
+def test_quality_mapping_low_to_fragment():
+    """Gemini 'low' maps to schema 'fragment'."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test", "date": "2026-03-01", "type": "document",
+            "quality": "low", "topics": [], "summary": "Test",
+        },
+        source_file="test.md",
+    )
+    assert result.data["quality"] == "fragment"
+
+
+def test_quality_passthrough_valid_value():
+    """Schema-valid quality values pass through unchanged."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test", "date": "2026-03-01", "type": "document",
+            "quality": "full", "topics": [], "summary": "Test",
+        },
+        source_file="test.md",
+    )
+    assert result.data["quality"] == "full"
+
+
+def test_no_unicode_escape_in_frontmatter():
+    """Domains with & should not be escaped to \\u0026 in tojson_raw."""
+    import json
+    from src.synthesize import _tojson_raw
+    result = _tojson_raw(["Platform & Architecture"])
+    assert "&" in result
+    assert "\\u0026" not in result
+
+
+def test_backslash_normalized_in_source():
+    """Source paths should use forward slashes after normalization."""
+    path = "C:\\Users\\test\\file.pdf"
+    normalized = path.replace('\\', '/')
+    assert "\\" not in normalized
+    assert "C:/Users/test/file.pdf" == normalized

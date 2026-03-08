@@ -53,13 +53,20 @@ _SOURCE_SUBDIR = {
 }
 
 
+def _tojson_raw(value):
+    """JSON serialize without HTML entity escaping."""
+    return json.dumps(value, ensure_ascii=False)
+
+
 def _get_jinja_env() -> Environment:
     templates_dir = Path(__file__).parent.parent / "templates"
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters['tojson_raw'] = _tojson_raw
+    return env
 
 
 def _copy_source_file(
@@ -198,7 +205,7 @@ def build_package(
     for stem, result in extracts.items():
         tmpl = env.get_template("extract.md.j2")
         content = tmpl.render(
-            source_file=str(result.source_file.path),
+            source_file=str(result.source_file.path).replace('\\', '/'),
             content_type=result.content_type,
             title=result.title,
             date=now.strftime("%Y-%m-%d"),

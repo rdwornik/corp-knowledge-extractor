@@ -5,10 +5,10 @@ title: "{{ title }}"
 date: {{ date }}
 source_type: "{{ source_type | default('documentation') }}"
 layer: "{{ layer | default('learning') }}"
-domains: {{ domains | default([]) | tojson }}
-topics: {{ topics | tojson }}
-people: {{ people | tojson }}
-products: {{ products | tojson }}
+domains: {{ domains | default([]) | tojson_raw }}
+topics: {{ topics | tojson_raw }}
+people: {{ people | tojson_raw }}
+products: {{ products | tojson_raw }}
 confidentiality: "{{ confidentiality | default('internal') }}"
 authority: "{{ authority | default('tribal') }}"
 {% if client %}client: "{{ client }}"

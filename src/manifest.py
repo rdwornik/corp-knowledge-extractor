@@ -24,6 +24,8 @@ class ManifestEntry:
     path: Path
     doc_type: str
     name: str
+    client: str | None = None
+    project: str | None = None
     status: FileStatus = FileStatus.PENDING
     error: str | None = None
 
@@ -54,6 +56,8 @@ class Manifest:
                 path=Path(entry["path"]),
                 doc_type=entry.get("doc_type", "document"),
                 name=entry.get("name", entry["id"]),
+                client=entry.get("client"),
+                project=entry.get("project"),
             ))
 
         return cls(

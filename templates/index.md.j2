@@ -2,10 +2,10 @@
 id: "{{ id }}"
 title: "{{ title }}"
 date: {{ date }}
-types: {{ types | tojson }}
-topics: {{ topics | tojson }}
-people: {{ people | tojson }}
-products: {{ products | tojson }}
+types: {{ types | tojson_raw }}
+topics: {{ topics | tojson_raw }}
+people: {{ people | tojson_raw }}
+products: {{ products | tojson_raw }}
 file_count: {{ file_count }}
 model: "{{ model }}"
 ---

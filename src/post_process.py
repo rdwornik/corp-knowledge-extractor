@@ -36,6 +36,8 @@ def post_process_extraction(
     raw_result: dict,
     source_tool: str = "knowledge-extractor",
     source_file: str = "",
+    client: str | None = None,
+    project: str | None = None,
 ) -> PostProcessResult:
     """Apply corp-os-meta normalization and validation to raw extraction result.
 
@@ -43,6 +45,8 @@ def post_process_extraction(
         raw_result: Raw dict from Gemini extraction (parsed JSON)
         source_tool: Tool identifier for frontmatter
         source_file: Original file path/name
+        client: Override client from manifest (takes precedence over Gemini)
+        project: Override project from manifest (takes precedence over Gemini)
 
     Returns:
         PostProcessResult with normalized data, links line, and validation status
@@ -52,9 +56,20 @@ def post_process_extraction(
     raw_result.setdefault("source_file", source_file)
     raw_result.setdefault("schema_version", 2)
 
+    # Manifest-provided client/project override Gemini's guess
+    if client:
+        raw_result["client"] = client
+    if project:
+        raw_result["project"] = project
+
     # Map CKE field names to corp-os-meta field names if needed
     if "content_type" in raw_result and "type" not in raw_result:
         raw_result["type"] = raw_result.pop("content_type")
+
+    # Map Gemini quality values to schema enum (full|partial|fragment)
+    _quality_map = {"high": "full", "medium": "partial", "low": "fragment"}
+    if "quality" in raw_result:
+        raw_result["quality"] = _quality_map.get(raw_result["quality"], raw_result["quality"])
 
     # Schema v2 defaults — safe values if LLM didn't produce them
     raw_result.setdefault("confidentiality", "internal")

@@ -214,7 +214,9 @@ class BatchProcessor:
         pp = post_process_extraction(
             raw_result=dict(result.raw_json),
             source_tool="knowledge-extractor",
-            source_file=str(entry.path),
+            source_file=str(entry.path).replace('\\', '/'),
+            client=entry.client,
+            project=entry.project,
         )
 
         extract_dir = pkg_dir / "extract"
@@ -223,16 +225,18 @@ class BatchProcessor:
 
         with open(extract_json_path, "w", encoding="utf-8") as f:
             json.dump({
-                "schema_version": 1,
+                "schema_version": 2,
                 "id": entry.id,
-                "source_file": str(entry.path),
+                "source_file": str(entry.path).replace('\\', '/'),
                 "doc_type": entry.doc_type,
-                "project": self.manifest.project,
+                "project": entry.project or self.manifest.project,
+                "client": pp.data.get("client"),
                 "title": result.title,
                 "summary": result.summary,
                 "topics": pp.data.get("topics", []),
                 "products": pp.data.get("products", []),
                 "people": pp.data.get("people", []),
+                "domains": pp.data.get("domains", []),
                 "key_points": result.key_points,
                 "slides_count": len(result.slides),
                 "links_line": pp.links_line,

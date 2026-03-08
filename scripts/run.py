@@ -290,7 +290,7 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
         extract_json_path.write_text(json.dumps({
             "schema_version": 2,
             "id": stem,
-            "source_file": str(result.source_file.path),
+            "source_file": str(result.source_file.path).replace('\\', '/'),
             "title": result.title,
             "summary": result.summary,
             "topics": result.topics,

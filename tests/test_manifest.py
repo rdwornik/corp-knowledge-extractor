@@ -105,3 +105,49 @@ def test_file_status_enum_values():
     assert FileStatus.DONE.value == "done"
     assert FileStatus.ERROR.value == "error"
     assert FileStatus.SKIPPED.value == "skipped"
+
+
+def test_manifest_entry_client_project_defaults():
+    """Client and project default to None."""
+    entry = ManifestEntry(id="test", path=Path("test.pdf"), doc_type="document", name="Test")
+    assert entry.client is None
+    assert entry.project is None
+
+
+def test_manifest_parses_client_project(tmp_path):
+    """Client and project should be parsed from manifest JSON."""
+    manifest_file = tmp_path / "manifest.json"
+    manifest_file.write_text(json.dumps({
+        "schema_version": 1,
+        "project": "Lenzing_Planning",
+        "output_dir": str(tmp_path / "output"),
+        "files": [
+            {
+                "id": "file-1",
+                "path": str(tmp_path / "test.pdf"),
+                "doc_type": "document",
+                "name": "Test",
+                "client": "Lenzing AG",
+                "project": "Lenzing_Planning",
+            }
+        ]
+    }))
+    manifest = Manifest.from_file(manifest_file)
+    assert manifest.files[0].client == "Lenzing AG"
+    assert manifest.files[0].project == "Lenzing_Planning"
+
+
+def test_manifest_client_project_optional(tmp_path):
+    """Client and project are optional in manifest JSON."""
+    manifest_file = tmp_path / "manifest.json"
+    manifest_file.write_text(json.dumps({
+        "schema_version": 1,
+        "project": "proj",
+        "output_dir": str(tmp_path / "output"),
+        "files": [
+            {"id": "file-1", "path": str(tmp_path / "test.pdf"), "doc_type": "document"}
+        ]
+    }))
+    manifest = Manifest.from_file(manifest_file)
+    assert manifest.files[0].client is None
+    assert manifest.files[0].project is None
