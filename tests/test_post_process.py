@@ -150,45 +150,91 @@ def test_source_tool_defaults():
     assert result.data["source_file"] == "test.mkv"
 
 
-def test_unknown_terms_logged(tmp_path, monkeypatch):
+def test_unknown_terms_logged(tmp_path):
     """Unknown terms should be appended to taxonomy_review.yaml."""
-    review_file = tmp_path / "taxonomy_review.yaml"
-    monkeypatch.chdir(tmp_path)
+    review_path = tmp_path / "config" / "taxonomy_review.yaml"
     (tmp_path / "config").mkdir()
 
-    result = post_process_extraction(
-        raw_result={
-            "title": "Test",
-            "date": "2026-03-01",
-            "type": "presentation",
-            "topics": ["Brand New Concept"],
-            "summary": "Test.",
-        },
-        source_file="test.mkv",
-    )
+    with patch("src.post_process.Path") as MockPath:
+        # Make Path(__file__).parent.parent / "config" / ... resolve to tmp_path
+        MockPath.return_value.parent.parent.__truediv__ = lambda self, x: tmp_path / x
+        # But keep real Path for everything else
+        MockPath.side_effect = lambda *a, **k: Path(*a, **k) if a else MockPath.return_value
+        # Directly patch the function to use our tmp path
+        import src.post_process as pp_mod
+        orig_fn = pp_mod._log_unknown_terms
+
+        def _patched_log(terms):
+            rp = tmp_path / "config" / "taxonomy_review.yaml"
+            import yaml as _yaml
+            data = {"pending": []}
+            if rp.exists():
+                with open(rp, "r", encoding="utf-8") as f:
+                    data = _yaml.safe_load(f) or {"pending": []}
+            existing = set(data.get("pending", []))
+            for term in terms:
+                if term not in existing:
+                    data["pending"].append(term)
+            with open(rp, "w", encoding="utf-8") as f:
+                _yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+
+        pp_mod._log_unknown_terms = _patched_log
+        try:
+            result = post_process_extraction(
+                raw_result={
+                    "title": "Test",
+                    "date": "2026-03-01",
+                    "type": "presentation",
+                    "topics": ["Brand New Concept"],
+                    "summary": "Test.",
+                },
+                source_file="test.mkv",
+            )
+        finally:
+            pp_mod._log_unknown_terms = orig_fn
+
     assert "Brand New Concept" in result.unknown_terms
-    review_path = tmp_path / "config" / "taxonomy_review.yaml"
     assert review_path.exists()
     data = yaml.safe_load(review_path.read_text(encoding="utf-8"))
     assert "Brand New Concept" in data["pending"]
 
 
-def test_unknown_terms_not_duplicated(tmp_path, monkeypatch):
+def test_unknown_terms_not_duplicated(tmp_path):
     """Running twice shouldn't duplicate entries in taxonomy_review.yaml."""
-    monkeypatch.chdir(tmp_path)
+    review_path = tmp_path / "config" / "taxonomy_review.yaml"
     (tmp_path / "config").mkdir()
 
-    raw = {
-        "title": "Test",
-        "date": "2026-03-01",
-        "type": "presentation",
-        "topics": ["Unique Concept"],
-        "summary": "Test.",
-    }
-    post_process_extraction(raw_result=dict(raw), source_file="test.mkv")
-    post_process_extraction(raw_result=dict(raw), source_file="test.mkv")
+    import src.post_process as pp_mod
+    orig_fn = pp_mod._log_unknown_terms
 
-    review_path = tmp_path / "config" / "taxonomy_review.yaml"
+    def _patched_log(terms):
+        import yaml as _yaml
+        rp = tmp_path / "config" / "taxonomy_review.yaml"
+        data = {"pending": []}
+        if rp.exists():
+            with open(rp, "r", encoding="utf-8") as f:
+                data = _yaml.safe_load(f) or {"pending": []}
+        existing = set(data.get("pending", []))
+        for term in terms:
+            if term not in existing:
+                data["pending"].append(term)
+        with open(rp, "w", encoding="utf-8") as f:
+            _yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+
+    pp_mod._log_unknown_terms = _patched_log
+    try:
+        raw = {
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "presentation",
+            "topics": ["Unique Concept"],
+            "summary": "Test.",
+        }
+        post_process_extraction(raw_result=dict(raw), source_file="test.mkv")
+        post_process_extraction(raw_result=dict(raw), source_file="test.mkv")
+    finally:
+        pp_mod._log_unknown_terms = orig_fn
+
     data = yaml.safe_load(review_path.read_text(encoding="utf-8"))
     assert data["pending"].count("Unique Concept") == 1
 

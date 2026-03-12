@@ -35,6 +35,49 @@ class TextExtractionResult:
     error: str | None = None
 
 
+def extract_source_date(file_path: Path) -> str | None:
+    """Extract document date from file metadata.
+
+    Returns YYYY-MM or YYYY-MM-DD, or None if unavailable.
+    Uses file metadata only — never content or LLM.
+    """
+    ext = file_path.suffix.lower()
+    try:
+        if ext == ".pdf":
+            import pdfplumber
+            with pdfplumber.open(file_path) as pdf:
+                info = pdf.metadata or {}
+                date_str = info.get("CreationDate") or info.get("ModDate")
+                if date_str and isinstance(date_str, str) and date_str.startswith("D:"):
+                    return f"{date_str[2:6]}-{date_str[6:8]}"
+                return None
+        elif ext == ".pptx":
+            from pptx import Presentation
+            prs = Presentation(str(file_path))
+            mod = prs.core_properties.modified
+            if mod:
+                return mod.strftime("%Y-%m")
+            return None
+        elif ext == ".docx":
+            import docx
+            doc = docx.Document(str(file_path))
+            mod = doc.core_properties.modified
+            if mod:
+                return mod.strftime("%Y-%m")
+            return None
+        elif ext in (".xlsx", ".xlsm"):
+            import openpyxl
+            wb = openpyxl.load_workbook(str(file_path), read_only=True)
+            mod = wb.properties.modified
+            wb.close()
+            if mod:
+                return mod.strftime("%Y-%m")
+            return None
+    except Exception:
+        return None
+    return None
+
+
 def extract_text(path: Path) -> TextExtractionResult:
     """Extract text from a file using the appropriate local extractor.
 
@@ -93,7 +136,7 @@ def _assess_quality(text: str, page_count: int = 0) -> str:
 
 
 def _extract_pdf(path: Path) -> TextExtractionResult:
-    """Extract text from PDF using pdfplumber."""
+    """Extract text from PDF using pdfplumber. Includes [PAGE N] markers."""
     import pdfplumber
 
     pages_text = []
@@ -102,7 +145,7 @@ def _extract_pdf(path: Path) -> TextExtractionResult:
 
     with pdfplumber.open(path) as pdf:
         page_count = len(pdf.pages)
-        for page in pdf.pages:
+        for i, page in enumerate(pdf.pages, 1):
             try:
                 text = page.extract_text()
             except Exception:
@@ -110,7 +153,7 @@ def _extract_pdf(path: Path) -> TextExtractionResult:
             if text is None:
                 had_none_pages = True
                 text = ""
-            pages_text.append(text)
+            pages_text.append(f"[PAGE {i}]\n{text}")
             if page.images:
                 has_images = True
 
@@ -130,11 +173,10 @@ def _extract_pdf(path: Path) -> TextExtractionResult:
 
 
 def _extract_docx(path: Path) -> TextExtractionResult:
-    """Extract text from DOCX using python-docx."""
+    """Extract text from DOCX using python-docx. Includes [SECTION N] markers."""
     import docx
 
     doc = docx.Document(path)
-    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
     has_images = any(
         r.element.tag.endswith("}drawing") or r.element.tag.endswith("}pict")
         for p in doc.paragraphs
@@ -142,7 +184,23 @@ def _extract_docx(path: Path) -> TextExtractionResult:
         for child in r.element
     )
 
-    full_text = "\n\n".join(paragraphs)
+    # Group paragraphs into sections by headings
+    sections: list[str] = []
+    current: list[str] = []
+    section_num = 1
+    for p in doc.paragraphs:
+        if not p.text.strip():
+            continue
+        if p.style and p.style.name and p.style.name.startswith("Heading"):
+            if current:
+                sections.append(f"[SECTION {section_num}]\n" + "\n\n".join(current))
+                section_num += 1
+                current = []
+        current.append(p.text)
+    if current:
+        sections.append(f"[SECTION {section_num}]\n" + "\n\n".join(current))
+
+    full_text = "\n\n".join(sections)
     return TextExtractionResult(
         text=full_text,
         char_count=len(full_text),
@@ -154,14 +212,14 @@ def _extract_docx(path: Path) -> TextExtractionResult:
 
 
 def _extract_pptx(path: Path) -> TextExtractionResult:
-    """Extract text from PPTX using python-pptx."""
+    """Extract text from PPTX using python-pptx. Includes [SLIDE N] markers."""
     from pptx import Presentation
 
     prs = Presentation(path)
     slides_text = []
     has_images = False
 
-    for slide in prs.slides:
+    for i, slide in enumerate(prs.slides, 1):
         texts = []
         for shape in slide.shapes:
             if shape.has_text_frame:
@@ -171,8 +229,8 @@ def _extract_pptx(path: Path) -> TextExtractionResult:
                         texts.append(text)
             if shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
                 has_images = True
-        if texts:
-            slides_text.append("\n".join(texts))
+        slide_body = "\n".join(texts) if texts else ""
+        slides_text.append(f"[SLIDE {i}]\n{slide_body}")
 
     full_text = "\n\n---\n\n".join(slides_text)
     return TextExtractionResult(

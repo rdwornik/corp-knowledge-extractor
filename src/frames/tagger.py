@@ -1,7 +1,12 @@
 import os
 import json
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
+_project_root = str(Path(__file__).parent.parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 from config.config_loader import get
 
 load_dotenv()

@@ -248,6 +248,8 @@ class BatchProcessor:
                 "links_line": pp.links_line,
                 "validation_result": pp.validation_result.value,
                 "unknown_terms": pp.unknown_terms,
+                "source_date": result.source_date,
+                "facts": result.facts,
                 "processed_at": datetime.now().isoformat(),
             }, f, indent=2, ensure_ascii=False, default=str)
 

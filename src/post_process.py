@@ -101,11 +101,11 @@ def post_process_extraction(
     else:
         # Quarantined — still generate links from raw data for the note
         links_parts = []
-        for topic in normalized_data.get("topics", []):
+        for topic in (normalized_data.get("topics") or []):
             links_parts.append(f"[[{topic}]]")
-        for product in normalized_data.get("products", []):
+        for product in (normalized_data.get("products") or []):
             links_parts.append(f"[[{product}]]")
-        for person in normalized_data.get("people", []):
+        for person in (normalized_data.get("people") or []):
             name = person.split("(")[0].strip()
             links_parts.append(f"[[{name}]]")
         links_line = "**Links:** " + " . ".join(links_parts) if links_parts else ""
@@ -123,7 +123,7 @@ def post_process_extraction(
 
 def _log_unknown_terms(terms: list[str]):
     """Append unknown terms to local review file for batch approval."""
-    review_path = Path("config/taxonomy_review.yaml")
+    review_path = Path(__file__).parent.parent / "config" / "taxonomy_review.yaml"
     data = {"pending": []}
     if review_path.exists():
         with open(review_path, "r", encoding="utf-8") as f:

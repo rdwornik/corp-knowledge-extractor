@@ -3,7 +3,7 @@
 # ======================
 
 gemini:
-  model: "gemini-2.5-flash"
+  model: "gemini-3-flash-preview"
   api_key_env: "GEMINI_API_KEY"
   max_file_size_mb: 2000
   upload_timeout_sec: 300
@@ -15,10 +15,10 @@ gemini:
 # ======================
 
 frame_sampling:
-  interval_sec: 10          # Extract 1 frame every N seconds
-  max_frames: 500           # Safety cap
-  format: "png"             # Output format
-  cleanup_non_slides: true  # Delete temp frames after Gemini selects unique slides
+  interval_sec: 10 # Extract 1 frame every N seconds
+  max_frames: 500 # Safety cap
+  format: "png" # Output format
+  cleanup_non_slides: true # Delete temp frames after Gemini selects unique slides
 
 # ======================
 # VIDEO COMPRESSION (new pipeline)
@@ -90,11 +90,22 @@ prompts:
       "tribal" for meeting notes, informal discussions, inferences
     - client: extract client/customer name if mentioned, null otherwise
 
+    FACT EXTRACTION RULES:
+    - The document text contains [PAGE N], [SLIDE N], or [SECTION N] markers.
+    - Extract concrete, atomic facts into the "facts" array below.
+    - Each fact MUST include the page/slide/section number where it was found.
+    - A fact is a single specific claim, number, decision, or capability statement.
+    - Aim for 5-20 facts per document (more for longer/richer documents).
+
     Respond ONLY with valid JSON (no markdown fences):
     {
       "title": "Descriptive title using full product/company names",
       "summary": "2-3 sentences — what matters here and why, not what happened",
       "key_points": ["insight 1", "insight 2"],
+      "facts": [
+        {"fact": "Concrete atomic fact with specific detail", "page": 3},
+        {"fact": "Another specific fact or capability", "slide": 5}
+      ],
       "topics": ["Topic Name", "Another Topic"],
       "people": ["Full Name (Role if known)"],
       "products": ["Full Product Name"],

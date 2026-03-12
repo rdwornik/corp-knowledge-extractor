@@ -17,6 +17,7 @@ Usage:
     result = extract_knowledge(source_file, config, sampled_frames=frames)
 """
 
+import copy
 import json
 import logging
 import mimetypes
@@ -27,7 +28,7 @@ from pathlib import Path
 
 from src.inventory import SourceFile, FileType
 from src.frames.sampler import SampledFrame
-from src.text_extract import TextExtractionResult
+from src.text_extract import TextExtractionResult, extract_source_date
 from src.utils import parse_llm_json
 from src.post_process import post_process_extraction, PostProcessResult
 from src.taxonomy_prompt import get_taxonomy_for_prompt
@@ -78,6 +79,9 @@ class ExtractionResult:
     authority: str = "tribal"
     client: str | None = None
     project: str | None = None
+    # RFP agent enrichment fields
+    source_date: str | None = None
+    facts: list[dict] = field(default_factory=list)
 
 
 class ExtractionError(Exception):
@@ -99,21 +103,24 @@ def _get_client(config: dict):
 
 
 def _get_model(config: dict) -> str:
-    return config.get("gemini", {}).get("model", "gemini-2.5-flash")
+    return config.get("model_override") or config.get("gemini", {}).get("model", "gemini-3-flash-preview")
 
 
-def _get_prompt(config: dict, prompt_name: str) -> str:
-    prompts = config.get("prompts") or {}
-    prompt = prompts.get(prompt_name, "")
-    if not prompt:
-        raise ExtractionError(f"No '{prompt_name}' prompt found in config['prompts']")
+def _get_prompt(config: dict, prompt_name: str, custom_prompt: str | None = None) -> str:
+    if custom_prompt:
+        prompt = custom_prompt
+    else:
+        prompts = config.get("prompts") or {}
+        prompt = prompts.get(prompt_name, "")
+        if not prompt:
+            raise ExtractionError(f"No '{prompt_name}' prompt found in config['prompts']")
 
     anon_terms = (config.get("anonymization") or {}).get("custom_terms", [])
     if anon_terms:
         prompt += f"\n\nRedact these terms from all output: {', '.join(anon_terms)}"
 
     # Inject canonical taxonomy so LLM uses correct terms from the start
-    if prompt_name in ("extract", "extract_with_slides"):
+    if prompt_name in ("extract", "extract_with_slides") or custom_prompt:
         prompt += f"\n\n{get_taxonomy_for_prompt()}"
 
     return prompt
@@ -197,11 +204,76 @@ def _parse_response(response_text: str, source_file: SourceFile) -> dict:
         raise ExtractionError(f"Failed to parse JSON response for {source_file.path.name}: {exc}")
 
 
+def _build_locator(page_ref, file_ext: str, max_pages: int) -> dict | None:
+    """Build a locator dict from an LLM page/slide reference. Validates against max."""
+    if page_ref is None:
+        return None
+    try:
+        num = int(page_ref)
+    except (TypeError, ValueError):
+        return None
+    if num < 1 or (max_pages > 0 and num > max_pages):
+        return None
+    if file_ext == ".pdf":
+        return {"type": "pdf", "page": num}
+    elif file_ext == ".pptx":
+        return {"type": "slide", "number": num}
+    elif file_ext == ".docx":
+        return {"type": "section", "number": num}
+    return None
+
+
+def _enrich_facts(
+    data: dict,
+    source_file: SourceFile,
+    source_date: str | None,
+    text_result: TextExtractionResult | None,
+) -> list[dict]:
+    """Build enriched facts list with source_date, locator, and polarity."""
+    from src.polarity import detect_polarity
+
+    file_ext = source_file.path.suffix.lower()
+    max_pages = 0
+    if text_result:
+        max_pages = text_result.page_count or text_result.slide_count or 0
+
+    # LLM may return facts as list[dict] with page refs, or key_points as list[str]
+    raw_facts = data.get("facts") or []
+    key_points = data.get("key_points") or []
+
+    enriched = []
+
+    if raw_facts and isinstance(raw_facts, list) and isinstance(raw_facts[0], dict):
+        # LLM returned structured facts with page/slide refs
+        for f in raw_facts:
+            fact_text = f.get("fact") or f.get("text") or ""
+            page_ref = f.get("page") or f.get("slide") or f.get("section")
+            enriched.append({
+                "fact": fact_text,
+                "source_date": source_date,
+                "locator": _build_locator(page_ref, file_ext, max_pages),
+                "polarity": detect_polarity(fact_text),
+            })
+    else:
+        # Fallback: enrich key_points (no locator info available)
+        for kp in key_points:
+            text = kp if isinstance(kp, str) else str(kp)
+            enriched.append({
+                "fact": text,
+                "source_date": source_date,
+                "locator": None,
+                "polarity": detect_polarity(text),
+            })
+
+    return enriched
+
+
 def _build_sampled_frame_contents(
     client,
     file: SourceFile,
     sampled_frames: list[SampledFrame],
     config: dict,
+    custom_prompt: str | None = None,
 ) -> list:
     """
     Build Gemini content parts for video + sampled frames.
@@ -213,7 +285,7 @@ def _build_sampled_frame_contents(
     """
     from google.genai import types
 
-    prompt = _get_prompt(config, "extract_with_slides")
+    prompt = _get_prompt(config, "extract_with_slides", custom_prompt=custom_prompt)
 
     # Upload video via File API
     uploaded = _upload_and_wait(client, file.path, config)
@@ -249,6 +321,7 @@ def extract_knowledge(
     file: SourceFile,
     config: dict,
     sampled_frames: list[SampledFrame] | None = None,
+    custom_prompt: str | None = None,
 ) -> ExtractionResult:
     """
     Send a file to Gemini and return structured extracted knowledge.
@@ -286,11 +359,11 @@ def extract_knowledge(
             "Extracting %s with %d sampled frames (AI slide selection)...",
             file.path.name, len(sampled_frames),
         )
-        contents = _build_sampled_frame_contents(client, file, sampled_frames, config)
+        contents = _build_sampled_frame_contents(client, file, sampled_frames, config, custom_prompt=custom_prompt)
 
     elif file.type in (FileType.VIDEO, FileType.AUDIO):
         log.info("Extracting %s (no frames)...", file.path.name)
-        prompt = _get_prompt(config, "extract")
+        prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
         uploaded = _upload_and_wait(client, file.path, config)
         contents = [
             types.Part.from_uri(file_uri=uploaded.uri, mime_type=uploaded.mime_type),
@@ -299,7 +372,7 @@ def extract_knowledge(
 
     elif file.type in (FileType.DOCUMENT, FileType.SLIDES):
         log.info("Extracting %s (%s)...", file.path.name, file.type.value)
-        prompt = _get_prompt(config, "extract")
+        prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
         if file.size_bytes > INLINE_SIZE_LIMIT:
             uploaded = _upload_and_wait(client, file.path, config)
             contents = [
@@ -315,7 +388,7 @@ def extract_knowledge(
 
     elif file.type in (FileType.NOTE, FileType.TRANSCRIPT, FileType.SPREADSHEET):
         log.info("Extracting %s (text)...", file.path.name)
-        prompt = _get_prompt(config, "extract")
+        prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
         try:
             text_content = file.path.read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
@@ -343,6 +416,9 @@ def extract_knowledge(
 
     data = _parse_response(response_text, file)
 
+    # Preserve raw Gemini output before post-processing mutates it
+    raw_data = copy.deepcopy(data) if custom_prompt else None
+
     # Post-process: normalize terms, apply taxonomy, cap cardinality, build links line
     pp = post_process_extraction(
         raw_result=data,
@@ -355,6 +431,12 @@ def extract_knowledge(
     result = _result_from_json(pp.data, file, tokens)
     result.links_line = pp.links_line
     result.validation_result = pp.validation_result.value
+    if raw_data is not None:
+        result.raw_json = raw_data
+
+    # RFP agent enrichment: source_date, locator, polarity
+    result.source_date = extract_source_date(file.path)
+    result.facts = _enrich_facts(data, file, result.source_date, None)
 
     log.info(
         "Extracted: '%s' | slides=%d | topics=%s | tokens=%d",
@@ -367,6 +449,7 @@ def extract_from_text(
     file: SourceFile,
     config: dict,
     text_result: TextExtractionResult,
+    custom_prompt: str | None = None,
 ) -> ExtractionResult:
     """
     Tier 2: Send pre-extracted text to Gemini 2.0 Flash (text-only, cheaper).
@@ -385,9 +468,9 @@ def extract_from_text(
     from google.genai import types
 
     client = _get_client(config)
-    model = "gemini-2.5-flash"  # Text-only input: no vision tokens charged
+    model = _get_model(config)
 
-    prompt = _get_prompt(config, "extract")
+    prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
 
     # Truncate very long text to stay within token limits
     text_content = text_result.text[:80000]
@@ -416,6 +499,9 @@ def extract_from_text(
 
     data = _parse_response(response_text, file)
 
+    # Preserve raw Gemini output before post-processing mutates it
+    raw_data = copy.deepcopy(data) if custom_prompt else None
+
     # Post-process via corp-os-meta
     pp = post_process_extraction(
         raw_result=data,
@@ -426,6 +512,12 @@ def extract_from_text(
     result = _result_from_json(pp.data, file, tokens)
     result.links_line = pp.links_line
     result.validation_result = pp.validation_result.value
+    if raw_data is not None:
+        result.raw_json = raw_data
+
+    # RFP agent enrichment: source_date, locator, polarity
+    result.source_date = extract_source_date(file.path)
+    result.facts = _enrich_facts(data, file, result.source_date, text_result)
 
     log.info(
         "Tier 2 extracted: '%s' | topics=%s | tokens=%d",
@@ -477,6 +569,10 @@ def extract_local(
     result = _result_from_json(pp.data, file, tokens=0)
     result.links_line = pp.links_line
     result.validation_result = pp.validation_result.value
+
+    # RFP agent enrichment: source_date, locator, polarity
+    result.source_date = extract_source_date(file.path)
+    result.facts = _enrich_facts(raw_result, file, result.source_date, text_result)
 
     log.info("Tier 1 local extraction: '%s'", result.title)
     return result

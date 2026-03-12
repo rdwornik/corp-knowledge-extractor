@@ -132,7 +132,10 @@ def cli(ctx):
 @click.option("--tier", type=click.IntRange(1, 3), default=None,
               help="Force extraction tier: 1=local, 2=text-AI, 3=multimodal (default: auto)")
 @click.option("--dry-run-tiers", is_flag=True, help="Show tier routing + cost estimate without processing")
-def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool):
+@click.option("--prompt-file", type=click.Path(exists=True), default=None,
+              help="Custom extraction prompt file (replaces default prompt)")
+@click.option("--model", default=None, help="Override Gemini model (default from settings.yaml)")
+def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None):
     """Process a file or folder into a knowledge package.
 
     INPUT_PATH defaults to the data/input/ directory from config if not given.
@@ -141,6 +144,14 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
               > keep_slides + cleanup > correlate > synthesize
     """
     config = load_config()
+
+    if model:
+        config["model_override"] = model
+
+    # Read custom prompt if provided
+    custom_prompt = None
+    if prompt_file:
+        custom_prompt = Path(prompt_file).read_text(encoding="utf-8")
 
     # Resolve input path — fall back to configured input directory
     from datetime import datetime
@@ -238,9 +249,9 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
             if decision.tier == Tier.LOCAL and decision.text_result:
                 result = extract_local(f, decision.text_result)
             elif decision.tier == Tier.TEXT_AI and decision.text_result:
-                result = extract_from_text(f, config, decision.text_result)
+                result = extract_from_text(f, config, decision.text_result, custom_prompt=custom_prompt)
             else:
-                result = extract_knowledge(f, config, sampled_frames=frames)
+                result = extract_knowledge(f, config, sampled_frames=frames, custom_prompt=custom_prompt)
             extracts[f.name] = result
             cost_total += decision.estimated_cost
             slide_info = f" | {len(result.slides)} slides identified" if result.slides else ""
@@ -287,30 +298,41 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
     extract_dir = pkg_path / "extract"
     for stem, result in extracts.items():
         extract_json_path = extract_dir / f"{stem}.json"
-        extract_json_path.write_text(json.dumps({
-            "schema_version": 2,
-            "id": stem,
-            "source_file": str(result.source_file.path).replace('\\', '/'),
-            "title": result.title,
-            "summary": result.summary,
-            "topics": result.topics,
-            "products": result.products,
-            "people": result.people,
-            "domains": result.domains,
-            "key_points": result.key_points,
-            "content_type": result.content_type,
-            "source_type": result.source_type,
-            "layer": result.layer,
-            "confidentiality": result.confidentiality,
-            "authority": result.authority,
-            "client": result.client,
-            "project": result.project,
-            "slides_count": len(result.slides),
-            "links_line": result.links_line,
-            "validation_result": result.validation_result,
-            "valid_to": result.raw_json.get("valid_to"),
-            "processed_at": _dt.now().isoformat(),
-        }, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+        if custom_prompt:
+            # Custom prompt: save raw Gemini JSON as-is (structure differs from standard)
+            extract_data = {
+                "source_file": str(result.source_file.path).replace('\\', '/'),
+                "processed_at": _dt.now().isoformat(),
+                **result.raw_json,
+            }
+        else:
+            extract_data = {
+                "schema_version": 2,
+                "id": stem,
+                "source_file": str(result.source_file.path).replace('\\', '/'),
+                "title": result.title,
+                "summary": result.summary,
+                "topics": result.topics,
+                "products": result.products,
+                "people": result.people,
+                "domains": result.domains,
+                "key_points": result.key_points,
+                "content_type": result.content_type,
+                "source_type": result.source_type,
+                "layer": result.layer,
+                "confidentiality": result.confidentiality,
+                "authority": result.authority,
+                "client": result.client,
+                "project": result.project,
+                "slides_count": len(result.slides),
+                "links_line": result.links_line,
+                "validation_result": result.validation_result,
+                "valid_to": result.raw_json.get("valid_to"),
+                "source_date": result.source_date,
+                "facts": result.facts,
+                "processed_at": _dt.now().isoformat(),
+            }
+        extract_json_path.write_text(json.dumps(extract_data, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
 
     _print(f"\n[green]Done![/green]" if HAS_RICH else "\nDone!")
     _print(f"Package: {pkg_path}")
@@ -324,32 +346,60 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
 @click.option("--max-rpm", default=100, show_default=True, help="Max requests per minute to Gemini API")
 @click.option("--tier", type=click.IntRange(1, 3), default=None,
               help="Force extraction tier: 1=local, 2=text-AI, 3=multimodal (default: auto)")
-def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int | None):
+@click.option("--batch", is_flag=True,
+              help="Use Gemini Batch API (50% cheaper, async processing)")
+@click.option("--batch-poll-interval", default=60, show_default=True,
+              help="Seconds between batch status checks")
+@click.option("--batch-timeout", default=86400, show_default=True,
+              help="Max seconds to wait for batch completion")
+@click.option("--model", default=None, help="Override Gemini model (default from settings.yaml)")
+def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int | None,
+                     batch: bool, batch_poll_interval: int, batch_timeout: int, model: str | None):
     """Process multiple files from a JSON manifest.
 
     Used by corp-project-extractor for batch extraction.
-    Initializes Gemini client once, processes all files sequentially.
 
-    Example:
-        python scripts/run.py process-manifest manifest.json --resume --max-rpm 80
+    Default mode: sequential Gemini API calls (immediate results).
+
+    With --batch: submits all Tier 2 requests as a single Gemini Batch API
+    job at 50% cost. Tier 1 (local) still runs immediately. Tier 3
+    (multimodal) falls back to synchronous calls.
+
+    Examples:
+
+        cke process-manifest manifest.json --resume --max-rpm 80
+
+        cke process-manifest manifest.json --batch --batch-poll-interval 30
     """
     from src.manifest import Manifest
-    from src.batch import BatchProcessor
 
     config = load_config()
+    if model:
+        config["model_override"] = model
     manifest = Manifest.from_file(Path(manifest_path))
 
-    _print(f"\n{'[bold]Batch processing:[/bold]' if HAS_RICH else 'Batch processing:'}"
-           f" {len(manifest.files)} files from project '{manifest.project}'")
+    mode_label = "[bold]Batch API[/bold]" if batch else "[bold]Sequential[/bold]"
+    if not HAS_RICH:
+        mode_label = "Batch API" if batch else "Sequential"
+    _print(f"\n{mode_label} processing: {len(manifest.files)} files from project '{manifest.project}'")
     _print(f"Output:     {manifest.output_dir}")
-    _print(f"Rate limit: {max_rpm} RPM")
+    if not batch:
+        _print(f"Rate limit: {max_rpm} RPM")
+    else:
+        _print(f"Batch poll: every {batch_poll_interval}s (timeout: {batch_timeout}s)")
     if resume:
         _print("[yellow]Resume mode: skipping completed files[/yellow]" if HAS_RICH
                else "Resume mode: skipping completed files")
     _print("")
 
-    processor = BatchProcessor(manifest, config, max_rpm=max_rpm, resume=resume, force_tier=tier)
-    summary = processor.process_all()
+    if batch:
+        from src.batch_api import BatchJobRunner
+        runner = BatchJobRunner(manifest, config, force_tier=tier, resume=resume)
+        summary = runner.run(poll_interval=batch_poll_interval, timeout=batch_timeout)
+    else:
+        from src.batch import BatchProcessor
+        processor = BatchProcessor(manifest, config, max_rpm=max_rpm, resume=resume, force_tier=tier)
+        summary = processor.process_all()
 
     _print("")
     done_str = f"[bold green]Done:[/bold green] {summary['done']}" if HAS_RICH else f"Done: {summary['done']}"
@@ -362,7 +412,11 @@ def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int |
     tiers = summary.get("tiers", {})
     if any(tiers.values()):
         _print(f"\nTiers: local={tiers.get(1, 0)}, text-AI={tiers.get(2, 0)}, multimodal={tiers.get(3, 0)}")
-        _print(f"Estimated API cost: ${summary.get('cost', 0):.4f}")
+        cost = summary.get('cost', 0)
+        cost_label = f"${cost:.4f}"
+        if batch:
+            cost_label += " (50% batch discount applied to Tier 2)"
+        _print(f"Estimated API cost: {cost_label}")
 
     if summary["error"] > 0:
         status_path = manifest.output_dir / "status.json"
@@ -424,6 +478,37 @@ def info(package_path: str):
     if history_dir.exists():
         versions = sorted(history_dir.iterdir())
         _print(f"History:       {len(versions)} version(s)")
+
+
+@cli.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--recursive/--no-recursive", default=True, help="Scan subfolders")
+@click.option("--output", "-o", default=None, help="Output JSON path (default: stdout)")
+@click.option(
+    "--exclude", multiple=True,
+    default=["80_Archive", ".corp", "_knowledge", ".venv", "__pycache__", ".git"],
+    help="Folders to skip",
+)
+def scan(path: str, recursive: bool, output: str | None, exclude: tuple[str, ...]):
+    """Scan files and extract local metadata (Tier 1, no API calls)."""
+    from src.scan import scan_path, results_to_json
+
+    input_path = Path(path).resolve()
+    _print(f"Scanning: {input_path}")
+    _print(f"Recursive: {recursive} | Exclude: {', '.join(exclude)}")
+
+    results = scan_path(input_path, recursive=recursive, exclude=exclude)
+    data = results_to_json(results)
+
+    json_str = json.dumps(data, indent=2, ensure_ascii=False, default=str)
+
+    if output:
+        out_path = Path(output)
+        out_path.write_text(json_str, encoding="utf-8")
+        _print(f"\nScanned {data['total_files']} files -> {out_path}")
+    else:
+        print(json_str)
+        print(f"\nScanned {data['total_files']} files", file=sys.stderr)
 
 
 if __name__ == "__main__":
