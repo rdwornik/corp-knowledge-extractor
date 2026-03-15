@@ -33,6 +33,7 @@ AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 @dataclass
 class FileScanResult:
     """Scan result for a single file."""
+
     path: str
     filename: str
     extension: str
@@ -237,12 +238,18 @@ def _scan_video(path: Path) -> dict:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "quiet",
-                "-print_format", "json",
-                "-show_format", "-show_streams",
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
                 str(path),
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode == 0:
             probe = json.loads(result.stdout)

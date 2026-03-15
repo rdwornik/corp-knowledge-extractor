@@ -30,6 +30,7 @@ def _make_file(tmp_path: Path, name: str, content: str = "x") -> Path:
 # Classification tests
 # ---------------------------------------------------------------------------
 
+
 def test_classify_video(tmp_path):
     p = _make_file(tmp_path, "meeting.mp4")
     files = scan_input(p, MINIMAL_CONFIG)
@@ -78,6 +79,7 @@ def test_classify_unknown(tmp_path):
 # ---------------------------------------------------------------------------
 # Folder scan tests
 # ---------------------------------------------------------------------------
+
 
 def test_scan_folder(tmp_path):
     _make_file(tmp_path, "session.mp4")

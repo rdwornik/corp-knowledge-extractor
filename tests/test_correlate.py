@@ -21,6 +21,7 @@ def _sf(name: str, ft: FileType, size: int = 1000) -> SourceFile:
 # stem_prefix helper
 # ---------------------------------------------------------------------------
 
+
 def test_stem_prefix_keeps_identifier_digits():
     # Digits that are part of the group ID must be preserved
     assert _stem_prefix("session1") == "session1"
@@ -42,6 +43,7 @@ def test_stem_prefix_no_change():
 # ---------------------------------------------------------------------------
 # Single group for small inputs
 # ---------------------------------------------------------------------------
+
 
 def test_single_group_for_one_file():
     files = [_sf("video.mp4", FileType.VIDEO)]
@@ -73,6 +75,7 @@ def test_single_group_for_three_files():
 # Filename matching (> 3 files)
 # ---------------------------------------------------------------------------
 
+
 def test_filename_matching_groups_session_files():
     files = [
         _sf("session1.mp4", FileType.VIDEO),
@@ -99,6 +102,7 @@ def test_unrelated_files_become_separate_groups():
 # ---------------------------------------------------------------------------
 # Primary selection
 # ---------------------------------------------------------------------------
+
 
 def test_video_is_primary():
     files = [
@@ -136,6 +140,7 @@ def test_related_files_not_primary():
 # ---------------------------------------------------------------------------
 # Empty input
 # ---------------------------------------------------------------------------
+
 
 def test_empty_input_returns_empty():
     groups = correlate_files([], {})

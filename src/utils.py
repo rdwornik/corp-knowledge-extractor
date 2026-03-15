@@ -58,6 +58,7 @@ def parse_llm_json(text: str) -> dict:
     # Strategy 4: json-repair (handles unescaped inner quotes, trailing commas, etc.)
     try:
         from json_repair import repair_json
+
         repaired = repair_json(text, return_objects=True)
         if isinstance(repaired, dict) and repaired:
             log.debug("json-repair recovered malformed JSON")
@@ -66,4 +67,4 @@ def parse_llm_json(text: str) -> dict:
         pass
 
     log.error("Cannot parse LLM JSON. Full response (%d chars):\n%s", len(text), text[:5000])
-    raise ValueError(f"Failed to parse LLM JSON response")
+    raise ValueError("Failed to parse LLM JSON response")

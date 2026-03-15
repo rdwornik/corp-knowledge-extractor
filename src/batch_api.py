@@ -25,11 +25,14 @@ from pathlib import Path
 
 from src.manifest import Manifest, ManifestEntry, FileStatus, save_status
 from src.extract import (
-    _get_client, _get_model, _get_prompt, _result_from_json,
-    _parse_response, ExtractionResult, ExtractionError,
+    _get_client,
+    _get_model,
+    _get_prompt,
+    _result_from_json,
+    ExtractionResult,
+    ExtractionError,
 )
 from src.inventory import SourceFile, FileType
-from src.text_extract import extract_text
 from src.tier_router import route_tier, Tier, TierDecision, TIER_COSTS
 from src.post_process import post_process_extraction
 from src.utils import parse_llm_json
@@ -92,11 +95,7 @@ def build_batch_jsonl(
                 continue
 
             text_content = decision.text_result.text[:80000]
-            full_prompt = (
-                f"{prompt}\n\n"
-                f"--- FILE CONTENT ({decision.text_result.extractor}) ---\n"
-                f"{text_content}"
-            )
+            full_prompt = f"{prompt}\n\n--- FILE CONTENT ({decision.text_result.extractor}) ---\n{text_content}"
 
             line = {
                 "key": entry.id,
@@ -207,9 +206,7 @@ def poll_batch_job(
         except Exception as e:
             retries += 1
             if retries > max_retries:
-                raise ExtractionError(
-                    f"Failed to poll batch job after {max_retries} retries: {e}"
-                ) from e
+                raise ExtractionError(f"Failed to poll batch job after {max_retries} retries: {e}") from e
             wait = min(poll_interval * retries, 300)
             logger.warning("Poll error (retry %d/%d): %s. Waiting %ds...", retries, max_retries, e, wait)
             time.sleep(wait)
@@ -220,7 +217,9 @@ def poll_batch_job(
         if state != last_state:
             logger.info(
                 "Batch %s: %s (%.0fs elapsed)",
-                job_name, state, elapsed,
+                job_name,
+                state,
+                elapsed,
             )
             last_state = state
 
@@ -230,9 +229,7 @@ def poll_batch_job(
             if state == "JOB_STATE_CANCELLED":
                 raise ExtractionError(f"Batch job {job_name} was CANCELLED")
             if state == "JOB_STATE_EXPIRED":
-                raise ExtractionError(
-                    f"Batch job {job_name} EXPIRED (ran >48h without completing)"
-                )
+                raise ExtractionError(f"Batch job {job_name} EXPIRED (ran >48h without completing)")
             return job  # SUCCEEDED
 
         time.sleep(poll_interval)
@@ -325,7 +322,7 @@ class BatchJobRunner:
         Execute batch processing. Returns summary dict compatible with
         the synchronous BatchProcessor.process_all() output.
         """
-        from src.extract import extract_local, extract_from_text, extract_knowledge
+        from src.extract import extract_local, extract_knowledge
         from src.manifest import load_status
         from src.correlate import correlate_files
         from src.synthesize import build_package
@@ -342,8 +339,11 @@ class BatchJobRunner:
 
         summary = {
             "total": len(self.manifest.files),
-            "done": 0, "error": 0, "skipped": 0,
-            "cost": 0.0, "tiers": {1: 0, 2: 0, 3: 0},
+            "done": 0,
+            "error": 0,
+            "skipped": 0,
+            "cost": 0.0,
+            "tiers": {1: 0, 2: 0, 3: 0},
             "batch_mode": True,
         }
 
@@ -384,15 +384,16 @@ class BatchJobRunner:
 
         logger.info(
             "Routing: %d local, %d batch (text-AI), %d synchronous (multimodal)",
-            len(tier1_entries), len(tier2_entries), len(tier3_entries),
+            len(tier1_entries),
+            len(tier2_entries),
+            len(tier3_entries),
         )
 
         # --- Phase 2: Process Tier 1 locally (free, instant) ---
         for entry, decision, source_file in tier1_entries:
             try:
                 result = extract_local(source_file, decision.text_result)
-                self._write_output(entry, result, source_file, output_dir,
-                                   correlate_files, build_package)
+                self._write_output(entry, result, source_file, output_dir, correlate_files, build_package)
                 self.statuses[entry.id] = {
                     "status": FileStatus.DONE.value,
                     "processed_at": datetime.now().isoformat(),
@@ -413,7 +414,9 @@ class BatchJobRunner:
         # --- Phase 3: Batch Tier 2 via Gemini Batch API ---
         if tier2_entries:
             batch_results = self._run_batch_tier2(
-                tier2_entries, poll_interval, timeout,
+                tier2_entries,
+                poll_interval,
+                timeout,
             )
             for entry, decision, source_file in tier2_entries:
                 response_text = batch_results.get(entry.id)
@@ -445,8 +448,7 @@ class BatchJobRunner:
                     if entry.project:
                         result.project = entry.project
 
-                    self._write_output(entry, result, source_file, output_dir,
-                                       correlate_files, build_package)
+                    self._write_output(entry, result, source_file, output_dir, correlate_files, build_package)
                     self.statuses[entry.id] = {
                         "status": FileStatus.DONE.value,
                         "processed_at": datetime.now().isoformat(),
@@ -503,8 +505,7 @@ class BatchJobRunner:
                 if entry.project:
                     result.project = entry.project
 
-                self._write_output(entry, result, source_file, output_dir,
-                                   correlate_files, build_package)
+                self._write_output(entry, result, source_file, output_dir, correlate_files, build_package)
                 self.statuses[entry.id] = {
                     "status": FileStatus.DONE.value,
                     "processed_at": datetime.now().isoformat(),
@@ -526,8 +527,11 @@ class BatchJobRunner:
 
         logger.info(
             "Batch complete: %d done, %d errors, %d skipped | cost: $%.4f | tiers: %s",
-            summary["done"], summary["error"], summary["skipped"],
-            summary["cost"], summary["tiers"],
+            summary["done"],
+            summary["error"],
+            summary["skipped"],
+            summary["cost"],
+            summary["tiers"],
         )
         return summary
 
@@ -556,7 +560,10 @@ class BatchJobRunner:
 
         logger.info(
             "Batch job submitted: %s (%d requests). Polling every %ds (timeout: %ds)...",
-            job.name, len(entries), poll_interval, timeout,
+            job.name,
+            len(entries),
+            poll_interval,
+            timeout,
         )
 
         # Poll
@@ -585,7 +592,7 @@ class BatchJobRunner:
         pp = post_process_extraction(
             raw_result=dict(result.raw_json),
             source_tool="knowledge-extractor",
-            source_file=str(entry.path).replace('\\', '/'),
+            source_file=str(entry.path).replace("\\", "/"),
             client=entry.client,
             project=entry.project,
         )
@@ -595,26 +602,32 @@ class BatchJobRunner:
         extract_json_path = extract_dir / "extract.json"
 
         with open(extract_json_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "schema_version": 2,
-                "id": entry.id,
-                "source_file": str(entry.path).replace('\\', '/'),
-                "doc_type": entry.doc_type,
-                "project": entry.project or self.manifest.project,
-                "client": pp.data.get("client"),
-                "title": result.title,
-                "summary": result.summary,
-                "topics": pp.data.get("topics", []),
-                "products": pp.data.get("products", []),
-                "people": pp.data.get("people", []),
-                "domains": pp.data.get("domains", []),
-                "key_points": result.key_points,
-                "slides_count": len(result.slides),
-                "links_line": pp.links_line,
-                "validation_result": pp.validation_result.value,
-                "unknown_terms": pp.unknown_terms,
-                "source_date": result.source_date,
-                "facts": result.facts,
-                "batch_api": True,
-                "processed_at": datetime.now().isoformat(),
-            }, f, indent=2, ensure_ascii=False, default=str)
+            json.dump(
+                {
+                    "schema_version": 2,
+                    "id": entry.id,
+                    "source_file": str(entry.path).replace("\\", "/"),
+                    "doc_type": entry.doc_type,
+                    "project": entry.project or self.manifest.project,
+                    "client": pp.data.get("client"),
+                    "title": result.title,
+                    "summary": result.summary,
+                    "topics": pp.data.get("topics", []),
+                    "products": pp.data.get("products", []),
+                    "people": pp.data.get("people", []),
+                    "domains": pp.data.get("domains", []),
+                    "key_points": result.key_points,
+                    "slides_count": len(result.slides),
+                    "links_line": pp.links_line,
+                    "validation_result": pp.validation_result.value,
+                    "unknown_terms": pp.unknown_terms,
+                    "source_date": result.source_date,
+                    "facts": result.facts,
+                    "batch_api": True,
+                    "processed_at": datetime.now().isoformat(),
+                },
+                f,
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            )

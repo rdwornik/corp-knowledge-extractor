@@ -36,8 +36,8 @@ log = logging.getLogger(__name__)
 
 
 class Tier(IntEnum):
-    LOCAL = 1       # Free local extraction
-    TEXT_AI = 2     # Text-only Gemini 2.0 Flash
+    LOCAL = 1  # Free local extraction
+    TEXT_AI = 2  # Text-only Gemini 2.0 Flash
     MULTIMODAL = 3  # Full multimodal Gemini 2.5 Flash
 
 
@@ -59,6 +59,7 @@ TIER_MODELS = {
 @dataclass
 class TierDecision:
     """Result of tier routing decision."""
+
     tier: Tier
     reason: str
     estimated_cost: float
@@ -98,11 +99,39 @@ def route_tier(
             model=TIER_MODELS[Tier.MULTIMODAL],
         )
 
-    # PPTX, XLSX, DOCX — Gemini API rejects these MIME types for upload,
+    # PPTX — check if image-heavy and renderer available → Tier 3 multimodal
+    # (render slides as PNG, send images to Gemini instead of plain text)
+    if file.type == FileType.SLIDES and file.path.suffix.lower() == ".pptx":
+        text_result = extract_text(file.path)
+        try:
+            from src.slides.renderer import detect_image_heavy, can_render
+
+            if detect_image_heavy(file.path) and can_render():
+                return TierDecision(
+                    tier=Tier.MULTIMODAL,
+                    reason="PPTX image-heavy, rendering slides for multimodal extraction",
+                    estimated_cost=TIER_COSTS[Tier.MULTIMODAL],
+                    model=TIER_MODELS[Tier.MULTIMODAL],
+                    text_result=text_result,
+                )
+        except Exception as e:
+            log.debug("PPTX image-heavy detection skipped: %s", e)
+        # Text-heavy or no renderer → Tier 2 text-only
+        return TierDecision(
+            tier=Tier.TEXT_AI,
+            reason=f"PPTX text extraction ({text_result.char_count} chars)",
+            estimated_cost=TIER_COSTS[Tier.TEXT_AI],
+            model=TIER_MODELS[Tier.TEXT_AI],
+            text_result=text_result,
+        )
+
+    # XLSX, DOCX — Gemini API rejects these MIME types for upload,
     # so they can never go to Tier 3 multimodal. Always extract text locally
     # and route to Tier 2 (text-only AI) or Tier 1 (local).
-    upload_blocked = file.type in (FileType.SLIDES, FileType.SPREADSHEET, FileType.DOCUMENT) and \
-        file.path.suffix.lower() in (".pptx", ".xlsx", ".docx")
+    upload_blocked = file.type in (FileType.SPREADSHEET, FileType.DOCUMENT) and file.path.suffix.lower() in (
+        ".xlsx",
+        ".docx",
+    )
 
     # Try local text extraction
     text_result = extract_text(file.path)

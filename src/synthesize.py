@@ -32,7 +32,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from src.compress import compress_video, needs_compression
 from src.correlate import FileGroup
-from src.extract import ExtractionResult, ExtractionError
+from src.extract import ExtractionResult
 from src.inventory import FileType, SourceFile
 from src.utils import parse_llm_json
 
@@ -65,7 +65,7 @@ def _get_jinja_env() -> Environment:
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    env.filters['tojson_raw'] = _tojson_raw
+    env.filters["tojson_raw"] = _tojson_raw
     return env
 
 
@@ -95,7 +95,6 @@ def _run_synthesis(
     config: dict,
 ) -> dict:
     """Make a second Gemini call to synthesize across all files."""
-    import os
     from google import genai
     from google.genai import types
 
@@ -127,11 +126,7 @@ def _run_synthesis(
         indent=2,
     )
 
-    combined_prompt = (
-        f"{synth_prompt}\n\n"
-        f"--- EXTRACTED KNOWLEDGE FROM {len(extracts)} FILES ---\n"
-        f"{extracts_summary}"
-    )
+    combined_prompt = f"{synth_prompt}\n\n--- EXTRACTED KNOWLEDGE FROM {len(extracts)} FILES ---\n{extracts_summary}"
 
     model = config.get("gemini", {}).get("model", "gemini-2.5-flash")
     client = genai.Client(api_key=api_key)
@@ -205,7 +200,7 @@ def build_package(
     for stem, result in extracts.items():
         tmpl = env.get_template("extract.md.j2")
         content = tmpl.render(
-            source_file=str(result.source_file.path).replace('\\', '/'),
+            source_file=str(result.source_file.path).replace("\\", "/"),
             content_type=result.content_type,
             title=result.title,
             date=now.strftime("%Y-%m-%d"),
@@ -231,6 +226,7 @@ def build_package(
             client=result.client,
             project=result.project,
             valid_to=result.raw_json.get("valid_to"),
+            slides_subdir="slides" if result.source_file.path.suffix.lower() == ".pptx" else "frames",
         )
         out_path = extract_dir / f"{stem}.md"
         out_path.write_text(content, encoding="utf-8")
@@ -246,7 +242,7 @@ def build_package(
     synthesis_md_path = extract_dir / "synthesis.md"
     if synthesis_data:
         synthesis_lines = [
-            f"# Synthesis\n",
+            "# Synthesis\n",
             f"## Executive Summary\n\n{synthesis_data.get('executive_summary', '')}\n",
         ]
         takeaways = synthesis_data.get("key_takeaways") or []
@@ -272,9 +268,7 @@ def build_package(
 
         synthesis_md_path.write_text("\n".join(synthesis_lines), encoding="utf-8")
     else:
-        synthesis_md_path.write_text(
-            "# Synthesis\n\n_Synthesis not available._\n", encoding="utf-8"
-        )
+        synthesis_md_path.write_text("# Synthesis\n\n_Synthesis not available._\n", encoding="utf-8")
 
     # --- Write _meta.yaml ---
     meta_tmpl = env.get_template("meta.yaml.j2")

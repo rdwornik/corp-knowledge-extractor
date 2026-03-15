@@ -1,4 +1,5 @@
 """Tests for Gemini Batch API integration."""
+
 import json
 import pytest
 from pathlib import Path
@@ -20,6 +21,7 @@ from src.extract import ExtractionError
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_text_result():
@@ -70,8 +72,8 @@ def mock_config():
 # build_batch_jsonl
 # ---------------------------------------------------------------------------
 
-class TestBuildBatchJsonl:
 
+class TestBuildBatchJsonl:
     def test_creates_jsonl_file(self, tmp_path, sample_entries, mock_config):
         jsonl_path = tmp_path / "batch_input.jsonl"
         result = build_batch_jsonl(sample_entries, mock_config, jsonl_path)
@@ -121,12 +123,16 @@ class TestBuildBatchJsonl:
         p.write_text("fake video")
 
         entries = [
-            (ManifestEntry(id="tier1", path=p, doc_type="note", name="Note"),
-             TierDecision(tier=Tier.LOCAL, reason="small", estimated_cost=0,
-                          model=None, text_result=sample_text_result)),
-            (ManifestEntry(id="tier3", path=p, doc_type="video", name="Video"),
-             TierDecision(tier=Tier.MULTIMODAL, reason="video", estimated_cost=0.03,
-                          model="gemini-2.5-flash")),
+            (
+                ManifestEntry(id="tier1", path=p, doc_type="note", name="Note"),
+                TierDecision(
+                    tier=Tier.LOCAL, reason="small", estimated_cost=0, model=None, text_result=sample_text_result
+                ),
+            ),
+            (
+                ManifestEntry(id="tier3", path=p, doc_type="video", name="Video"),
+                TierDecision(tier=Tier.MULTIMODAL, reason="video", estimated_cost=0.03, model="gemini-2.5-flash"),
+            ),
         ]
 
         jsonl_path = tmp_path / "batch.jsonl"
@@ -144,8 +150,8 @@ class TestBuildBatchJsonl:
 # submit_batch_job
 # ---------------------------------------------------------------------------
 
-class TestSubmitBatchJob:
 
+class TestSubmitBatchJob:
     def test_uploads_and_creates_job(self, tmp_path):
         jsonl_path = tmp_path / "batch.jsonl"
         jsonl_path.write_text('{"key": "test", "request": {}}\n')
@@ -175,8 +181,8 @@ class TestSubmitBatchJob:
 # poll_batch_job
 # ---------------------------------------------------------------------------
 
-class TestPollBatchJob:
 
+class TestPollBatchJob:
     def test_returns_on_success(self):
         mock_client = MagicMock()
         mock_job = MagicMock()
@@ -259,29 +265,22 @@ class TestPollBatchJob:
 # parse_batch_results
 # ---------------------------------------------------------------------------
 
-class TestParseBatchResults:
 
+class TestParseBatchResults:
     def _make_result_line(self, key: str, text: str) -> str:
-        return json.dumps({
-            "key": key,
-            "response": {
-                "candidates": [{
-                    "content": {
-                        "parts": [{"text": text}]
-                    }
-                }]
-            }
-        })
+        return json.dumps({"key": key, "response": {"candidates": [{"content": {"parts": [{"text": text}]}}]}})
 
     def test_maps_keys_to_responses(self):
         mock_client = MagicMock()
         mock_job = MagicMock()
         mock_job.dest.file_name = "files/result123"
 
-        result_jsonl = "\n".join([
-            self._make_result_line("doc-0", '{"title": "Doc Zero"}'),
-            self._make_result_line("doc-1", '{"title": "Doc One"}'),
-        ])
+        result_jsonl = "\n".join(
+            [
+                self._make_result_line("doc-0", '{"title": "Doc Zero"}'),
+                self._make_result_line("doc-1", '{"title": "Doc One"}'),
+            ]
+        )
         mock_client.files.download.return_value = result_jsonl.encode("utf-8")
 
         results = parse_batch_results(mock_client, mock_job)
@@ -296,10 +295,12 @@ class TestParseBatchResults:
         mock_job = MagicMock()
         mock_job.dest.file_name = "files/result123"
 
-        result_jsonl = "\n".join([
-            self._make_result_line("doc-0", '{"title": "OK"}'),
-            json.dumps({"key": "doc-1", "error": {"message": "rate limit"}}),
-        ])
+        result_jsonl = "\n".join(
+            [
+                self._make_result_line("doc-0", '{"title": "OK"}'),
+                json.dumps({"key": "doc-1", "error": {"message": "rate limit"}}),
+            ]
+        )
         mock_client.files.download.return_value = result_jsonl.encode("utf-8")
 
         results = parse_batch_results(mock_client, mock_job)
@@ -332,11 +333,12 @@ class TestParseBatchResults:
 # Cost display
 # ---------------------------------------------------------------------------
 
-class TestCostDiscount:
 
+class TestCostDiscount:
     def test_tier2_batch_cost_is_half(self):
         """Tier 2 batch cost should be 50% of synchronous."""
         from src.tier_router import TIER_COSTS, Tier
+
         sync_cost = TIER_COSTS[Tier.TEXT_AI]
         batch_cost = sync_cost * 0.5
         assert batch_cost == sync_cost / 2
@@ -347,8 +349,8 @@ class TestCostDiscount:
 # Integration: BatchJobRunner routing
 # ---------------------------------------------------------------------------
 
-class TestBatchJobRunnerRouting:
 
+class TestBatchJobRunnerRouting:
     def test_routes_entries_to_correct_tiers(self, tmp_path):
         """Verify that entries are bucketed into tier1/tier2/tier3 lists."""
         # Create files of different types

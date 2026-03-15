@@ -3,6 +3,7 @@ Batch processor for manifest-driven extraction.
 Initializes Gemini client once, processes all files sequentially,
 tracks status per file, supports resume.
 """
+
 import json
 import shutil
 import time
@@ -30,8 +31,9 @@ _DOC_TYPE_MAP = {
 class BatchProcessor:
     """Process a manifest of files through the extraction pipeline."""
 
-    def __init__(self, manifest: Manifest, config: dict, max_rpm: int = 100,
-                 resume: bool = False, force_tier: int | None = None):
+    def __init__(
+        self, manifest: Manifest, config: dict, max_rpm: int = 100, resume: bool = False, force_tier: int | None = None
+    ):
         self.manifest = manifest
         self.config = config
         self.max_rpm = max_rpm
@@ -44,8 +46,8 @@ class BatchProcessor:
 
     def process_all(self) -> dict:
         """Process all files in manifest. Returns summary dict."""
-        from src.inventory import SourceFile, FileType, scan_input
-        from src.extract import extract_knowledge, extract_from_text, extract_local, ExtractionError
+        from src.inventory import SourceFile, FileType
+        from src.extract import extract_knowledge, extract_from_text, extract_local, extract_pptx_multimodal
         from src.correlate import correlate_files
         from src.synthesize import build_package
         from src.frames.sampler import sample_frames
@@ -60,8 +62,14 @@ class BatchProcessor:
         if self.resume:
             existing_status = load_status(output_dir)
 
-        summary = {"total": len(self.manifest.files), "done": 0, "error": 0, "skipped": 0,
-                   "cost": 0.0, "tiers": {1: 0, 2: 0, 3: 0}}
+        summary = {
+            "total": len(self.manifest.files),
+            "done": 0,
+            "error": 0,
+            "skipped": 0,
+            "cost": 0.0,
+            "tiers": {1: 0, 2: 0, 3: 0},
+        }
 
         for i, entry in enumerate(self.manifest.files, 1):
             logger.info("[%d/%d] Processing: %s", i, summary["total"], entry.name)
@@ -92,11 +100,21 @@ class BatchProcessor:
 
             try:
                 tier_used = self._process_single(
-                    entry, output_dir, FileType, SourceFile,
-                    extract_knowledge, extract_from_text, extract_local,
-                    correlate_files, build_package,
-                    sample_frames, needs_compression, compress_video,
-                    route_tier, Tier,
+                    entry,
+                    output_dir,
+                    FileType,
+                    SourceFile,
+                    extract_knowledge,
+                    extract_from_text,
+                    extract_local,
+                    extract_pptx_multimodal,
+                    correlate_files,
+                    build_package,
+                    sample_frames,
+                    needs_compression,
+                    compress_video,
+                    route_tier,
+                    Tier,
                 )
                 self.statuses[entry.id] = {
                     "status": FileStatus.DONE.value,
@@ -106,6 +124,7 @@ class BatchProcessor:
                 summary["done"] += 1
                 summary["tiers"][tier_used] = summary["tiers"].get(tier_used, 0) + 1
                 from src.tier_router import TIER_COSTS, Tier as _T
+
                 summary["cost"] += TIER_COSTS[_T(tier_used)]
                 logger.info("  Done (Tier %d): %s", tier_used, entry.name)
 
@@ -122,8 +141,11 @@ class BatchProcessor:
 
         logger.info(
             "Batch complete: %d done, %d errors, %d skipped | cost: $%.4f | tiers: %s",
-            summary["done"], summary["error"], summary["skipped"],
-            summary["cost"], summary["tiers"],
+            summary["done"],
+            summary["error"],
+            summary["skipped"],
+            summary["cost"],
+            summary["tiers"],
         )
         return summary
 
@@ -136,6 +158,7 @@ class BatchProcessor:
         extract_knowledge,
         extract_from_text,
         extract_local,
+        extract_pptx_multimodal,
         correlate_files,
         build_package,
         sample_frames,
@@ -182,6 +205,20 @@ class BatchProcessor:
             result = extract_local(source_file, decision.text_result)
         elif decision.tier == Tier.TEXT_AI and decision.text_result:
             result = extract_from_text(source_file, self.config, decision.text_result)
+        elif source_file.path.suffix.lower() == ".pptx" and decision.tier == Tier.MULTIMODAL:
+            # PPTX multimodal: render slides as PNG, send to Gemini
+            from src.slides.renderer import render_slides
+
+            temp_slides_dir = pkg_dir / "temp_slides" / source_file.name
+            rendered = render_slides(source_file.path, temp_slides_dir)
+            result = extract_pptx_multimodal(source_file, self.config, rendered)
+            # Keep rendered slides
+            slides_dir = pkg_dir / "source" / "slides"
+            slides_dir.mkdir(parents=True, exist_ok=True)
+            for rs in rendered:
+                if rs.image_path.exists():
+                    shutil.copy2(rs.image_path, slides_dir / rs.image_path.name)
+                    rs.image_path.unlink()
         else:
             result = extract_knowledge(source_file, self.config, sampled_frames=sampled_frames)
 
@@ -220,7 +257,7 @@ class BatchProcessor:
         pp = post_process_extraction(
             raw_result=dict(result.raw_json),
             source_tool="knowledge-extractor",
-            source_file=str(entry.path).replace('\\', '/'),
+            source_file=str(entry.path).replace("\\", "/"),
             client=entry.client,
             project=entry.project,
         )
@@ -230,28 +267,34 @@ class BatchProcessor:
         extract_json_path = extract_dir / "extract.json"
 
         with open(extract_json_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "schema_version": 2,
-                "id": entry.id,
-                "source_file": str(entry.path).replace('\\', '/'),
-                "doc_type": entry.doc_type,
-                "project": entry.project or self.manifest.project,
-                "client": pp.data.get("client"),
-                "title": result.title,
-                "summary": result.summary,
-                "topics": pp.data.get("topics", []),
-                "products": pp.data.get("products", []),
-                "people": pp.data.get("people", []),
-                "domains": pp.data.get("domains", []),
-                "key_points": result.key_points,
-                "slides_count": len(result.slides),
-                "links_line": pp.links_line,
-                "validation_result": pp.validation_result.value,
-                "unknown_terms": pp.unknown_terms,
-                "source_date": result.source_date,
-                "facts": result.facts,
-                "processed_at": datetime.now().isoformat(),
-            }, f, indent=2, ensure_ascii=False, default=str)
+            json.dump(
+                {
+                    "schema_version": 2,
+                    "id": entry.id,
+                    "source_file": str(entry.path).replace("\\", "/"),
+                    "doc_type": entry.doc_type,
+                    "project": entry.project or self.manifest.project,
+                    "client": pp.data.get("client"),
+                    "title": result.title,
+                    "summary": result.summary,
+                    "topics": pp.data.get("topics", []),
+                    "products": pp.data.get("products", []),
+                    "people": pp.data.get("people", []),
+                    "domains": pp.data.get("domains", []),
+                    "key_points": result.key_points,
+                    "slides_count": len(result.slides),
+                    "links_line": pp.links_line,
+                    "validation_result": pp.validation_result.value,
+                    "unknown_terms": pp.unknown_terms,
+                    "source_date": result.source_date,
+                    "facts": result.facts,
+                    "processed_at": datetime.now().isoformat(),
+                },
+                f,
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            )
 
     def _rate_limit(self):
         """Ensure minimum interval between requests."""

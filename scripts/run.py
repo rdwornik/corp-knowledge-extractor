@@ -27,7 +27,7 @@ load_dotenv()
 
 from config.config_loader import load_config
 from src.inventory import scan_input, FileType
-from src.extract import extract_knowledge, extract_from_text, extract_local, ExtractionError
+from src.extract import extract_knowledge, extract_from_text, extract_local, extract_pptx_multimodal, ExtractionError
 from src.correlate import correlate_files
 from src.synthesize import build_package
 from src.reextract import reextract_package
@@ -111,6 +111,28 @@ def keep_slide_frames(
                 all_frames[0].path.parent.rmdir()
         except OSError:
             pass  # Not empty — leave it
+
+
+def _keep_pptx_slides(rendered_slides: list, output_dir: Path) -> None:
+    """Copy rendered PPTX slide PNGs to the output package.
+
+    Slides are already named slide_001.png, slide_002.png, etc.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for rs in rendered_slides:
+        target = output_dir / rs.image_path.name
+        if rs.image_path.exists():
+            shutil.copy2(rs.image_path, target)
+    # Cleanup temp rendered slides
+    for rs in rendered_slides:
+        if rs.image_path.exists():
+            rs.image_path.unlink()
+    # Remove empty temp dir
+    try:
+        if rendered_slides:
+            rendered_slides[0].image_path.parent.rmdir()
+    except OSError:
+        pass
 
 
 @click.group(invoke_without_command=True)
@@ -238,6 +260,8 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
     failed: list[str] = []
     cost_total = 0.0
 
+    rendered_pptx_slides: dict[str, list] = {}  # stem -> RenderedSlide list
+
     for f in files:
         decision = tier_decisions[f.name]
         frames = sampled.get(f.name)
@@ -250,6 +274,14 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
                 result = extract_local(f, decision.text_result)
             elif decision.tier == Tier.TEXT_AI and decision.text_result:
                 result = extract_from_text(f, config, decision.text_result, custom_prompt=custom_prompt)
+            elif f.path.suffix.lower() == ".pptx" and decision.tier == Tier.MULTIMODAL:
+                # PPTX multimodal: render slides as PNG, send to Gemini
+                from src.slides.renderer import render_slides
+                temp_slides_dir = output_p / package_name / "temp_slides" / f.name
+                rendered = render_slides(f.path, temp_slides_dir)
+                rendered_pptx_slides[f.name] = rendered
+                _print(f"    Rendered {len(rendered)} slide images")
+                result = extract_pptx_multimodal(f, config, rendered, custom_prompt=custom_prompt)
             else:
                 result = extract_knowledge(f, config, sampled_frames=frames, custom_prompt=custom_prompt)
             extracts[f.name] = result
@@ -272,10 +304,15 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
 
     # --- 5. Keep only AI-identified slide frames, clean up temp ---
     _print("\nSelecting unique slide frames...")
+    output_pptx_slides_dir = output_p / package_name / "source" / "slides"
     for stem, result in extracts.items():
         if result.slides and stem in sampled:
             keep_slide_frames(sampled[stem], result.slides, output_frames_dir, config)
             _print(f"  {stem}: kept {len(result.slides)} slide frame(s)")
+        elif stem in rendered_pptx_slides:
+            # PPTX multimodal: copy rendered slide PNGs to source/slides/
+            _keep_pptx_slides(rendered_pptx_slides[stem], output_pptx_slides_dir)
+            _print(f"  {stem}: kept {len(rendered_pptx_slides[stem])} PPTX slide(s)")
         elif stem in sampled and not result.slides:
             # No slides identified — clean up temp frames
             if config.get("frame_sampling", {}).get("cleanup_non_slides", True):

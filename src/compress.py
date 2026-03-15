@@ -35,7 +35,9 @@ def needs_compression(source: Path, config: dict) -> bool:
     if size_mb <= skip_mb:
         log.info(
             "Skipping compression: %s is %.0fMB (threshold: %gMB)",
-            source.name, size_mb, skip_mb,
+            source.name,
+            size_mb,
+            skip_mb,
         )
         return False
     return True
@@ -66,14 +68,22 @@ def compress_video(source: Path, target: Path, config: dict) -> Path:
 
     cmd = [
         "ffmpeg",
-        "-i", str(source),
-        "-c:v", "libx264",
-        "-crf", str(crf),
-        "-preset", preset,
-        "-vf", f"scale={resolution}",
-        "-c:a", "aac",
-        "-b:a", audio_bitrate,
-        "-movflags", "+faststart",
+        "-i",
+        str(source),
+        "-c:v",
+        "libx264",
+        "-crf",
+        str(crf),
+        "-preset",
+        preset,
+        "-vf",
+        f"scale={resolution}",
+        "-c:a",
+        "aac",
+        "-b:a",
+        audio_bitrate,
+        "-movflags",
+        "+faststart",
         "-y",
         str(target),
     ]
@@ -81,7 +91,7 @@ def compress_video(source: Path, target: Path, config: dict) -> Path:
     log.info("Compressing %s → %s", source.name, target.name)
 
     try:
-        result = subprocess.run(
+        subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

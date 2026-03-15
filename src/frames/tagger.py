@@ -4,10 +4,11 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
+
 _project_root = str(Path(__file__).parent.parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
-from config.config_loader import get
+from config.config_loader import get  # noqa: E402
 
 load_dotenv()
 
@@ -33,29 +34,26 @@ def tag_frames(frames: list[dict], batch_size: int = None) -> list[dict]:
 
     client = genai.Client(api_key=api_key)
     model_name = get("settings", "llm.tagger_model", "gemini-2.5-flash")
-    
+
     # Process in batches
     for i in range(0, len(frames), batch_size):
-        batch = frames[i:i + batch_size]
+        batch = frames[i : i + batch_size]
         batch_num = (i // batch_size) + 1
         total_batches = (len(frames) + batch_size - 1) // batch_size
         print(f"    Tagging frames {batch_num}/{total_batches}...")
-        
+
         # Build prompt
         prompt = _build_tagging_prompt(batch, start_index=i)
-        
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt
-        )
-        
+
+        response = client.models.generate_content(model=model_name, contents=prompt)
+
         # Parse response
         tags_list = _parse_tags_response(response.text, len(batch))
-        
+
         # Assign tags to frames
         for j, tags in enumerate(tags_list):
             frames[i + j]["tags"] = tags
-    
+
     return frames
 
 
@@ -66,7 +64,7 @@ def _build_tagging_prompt(batch: list[dict], start_index: int) -> str:
         frame_num = start_index + j + 1
         ocr_text = frame.get("text", "")[:ocr_limit]
         content += f"FRAME {frame_num}:\n{ocr_text}\n\n"
-    
+
     return f"""Analyze these presentation slides and generate semantic tags for each.
 
 {content}
@@ -93,14 +91,14 @@ def _parse_tags_response(text: str, expected_count: int) -> list[list[str]]:
         if start != -1 and end > start:
             data = json.loads(text[start:end])
             tags_list = [f.get("tags", []) for f in data.get("frames", [])]
-            
+
             # Pad if needed
             while len(tags_list) < expected_count:
                 tags_list.append([])
-            
+
             return tags_list[:expected_count]
-    except:
+    except Exception:
         pass
-    
+
     # Fallback: empty tags
     return [[] for _ in range(expected_count)]

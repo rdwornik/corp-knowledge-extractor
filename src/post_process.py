@@ -3,6 +3,7 @@ Post-processor for extraction results.
 Delegates to corp_os_meta for normalization, validation, and link generation.
 Adds CKE-specific logic: unknown term logging to local file.
 """
+
 import logging
 import yaml
 from pathlib import Path
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PostProcessResult:
     """Result of post-processing with metadata about what changed."""
+
     data: dict
     links_line: str
     validation_result: ValidationResult
@@ -101,11 +103,11 @@ def post_process_extraction(
     else:
         # Quarantined — still generate links from raw data for the note
         links_parts = []
-        for topic in (normalized_data.get("topics") or []):
+        for topic in normalized_data.get("topics") or []:
             links_parts.append(f"[[{topic}]]")
-        for product in (normalized_data.get("products") or []):
+        for product in normalized_data.get("products") or []:
             links_parts.append(f"[[{product}]]")
-        for person in (normalized_data.get("people") or []):
+        for person in normalized_data.get("people") or []:
             name = person.split("(")[0].strip()
             links_parts.append(f"[[{name}]]")
         links_line = "**Links:** " + " . ".join(links_parts) if links_parts else ""

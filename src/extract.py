@@ -18,7 +18,6 @@ Usage:
 """
 
 import copy
-import json
 import logging
 import mimetypes
 import os
@@ -30,7 +29,7 @@ from src.inventory import SourceFile, FileType
 from src.frames.sampler import SampledFrame
 from src.text_extract import TextExtractionResult, extract_source_date
 from src.utils import parse_llm_json
-from src.post_process import post_process_extraction, PostProcessResult
+from src.post_process import post_process_extraction
 from src.taxonomy_prompt import get_taxonomy_for_prompt
 
 log = logging.getLogger(__name__)
@@ -42,11 +41,11 @@ MAX_FRAMES_PER_REQUEST = 200
 @dataclass
 class SlideAnalysis:
     slide_number: int
-    frame_index: int = 0          # sample_NNNN index from Gemini's response
+    frame_index: int = 0  # sample_NNNN index from Gemini's response
     slide_title: str = ""
     timestamp_approx: str = ""
-    speaker_insight: str = ""     # What the speaker SAID — the main content
-    so_what: str = ""             # Practical implication paragraph
+    speaker_insight: str = ""  # What the speaker SAID — the main content
+    so_what: str = ""  # Practical implication paragraph
     critical_notes: str | None = None  # Red flags / things to verify
     key_facts: list[str] = field(default_factory=list)
 
@@ -68,7 +67,7 @@ class ExtractionResult:
     slides: list[SlideAnalysis] = field(default_factory=list)
     raw_json: dict = field(default_factory=dict)
     tokens_used: int = 0
-    links_line: str = ""          # Deterministic Links line from post-processing
+    links_line: str = ""  # Deterministic Links line from post-processing
     source_tool: str = "knowledge-extractor"
     validation_result: str = "valid"  # "valid", "warnings", "quarantine"
     # Schema v2 knowledge dimensions
@@ -91,6 +90,7 @@ class ExtractionError(Exception):
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_client(config: dict):
     from google import genai
@@ -128,7 +128,6 @@ def _get_prompt(config: dict, prompt_name: str, custom_prompt: str | None = None
 
 def _upload_and_wait(client, path: Path, config: dict):
     """Upload a file via the Gemini File API and poll until ACTIVE."""
-    from google.genai import types
 
     polling_sec = config.get("gemini", {}).get("polling_interval_sec", 5)
     upload_timeout = config.get("gemini", {}).get("upload_timeout_sec", 300)
@@ -157,16 +156,18 @@ def _upload_and_wait(client, path: Path, config: dict):
 def _slides_from_json(slides_data: list) -> list[SlideAnalysis]:
     result = []
     for i, s in enumerate(slides_data or []):
-        result.append(SlideAnalysis(
-            slide_number=int(s.get("slide_number") or (i + 1)),
-            frame_index=int(s.get("frame_index") or 0),
-            slide_title=s.get("slide_title") or "",
-            timestamp_approx=s.get("timestamp_approx") or "",
-            speaker_insight=s.get("speaker_insight") or "",
-            so_what=s.get("so_what") or "",
-            critical_notes=s.get("critical_notes") or None,
-            key_facts=s.get("key_facts") or [],
-        ))
+        result.append(
+            SlideAnalysis(
+                slide_number=int(s.get("slide_number") or (i + 1)),
+                frame_index=int(s.get("frame_index") or 0),
+                slide_title=s.get("slide_title") or "",
+                timestamp_approx=s.get("timestamp_approx") or "",
+                speaker_insight=s.get("speaker_insight") or "",
+                so_what=s.get("so_what") or "",
+                critical_notes=s.get("critical_notes") or None,
+                key_facts=s.get("key_facts") or [],
+            )
+        )
     return result
 
 
@@ -248,22 +249,26 @@ def _enrich_facts(
         for f in raw_facts:
             fact_text = f.get("fact") or f.get("text") or ""
             page_ref = f.get("page") or f.get("slide") or f.get("section")
-            enriched.append({
-                "fact": fact_text,
-                "source_date": source_date,
-                "locator": _build_locator(page_ref, file_ext, max_pages),
-                "polarity": detect_polarity(fact_text),
-            })
+            enriched.append(
+                {
+                    "fact": fact_text,
+                    "source_date": source_date,
+                    "locator": _build_locator(page_ref, file_ext, max_pages),
+                    "polarity": detect_polarity(fact_text),
+                }
+            )
     else:
         # Fallback: enrich key_points (no locator info available)
         for kp in key_points:
             text = kp if isinstance(kp, str) else str(kp)
-            enriched.append({
-                "fact": text,
-                "source_date": source_date,
-                "locator": None,
-                "polarity": detect_polarity(text),
-            })
+            enriched.append(
+                {
+                    "fact": text,
+                    "source_date": source_date,
+                    "locator": None,
+                    "polarity": detect_polarity(text),
+                }
+            )
 
     return enriched
 
@@ -296,7 +301,8 @@ def _build_sampled_frame_contents(
     if len(sampled_frames) > MAX_FRAMES_PER_REQUEST:
         log.warning(
             "Capping frames sent to Gemini: %d → %d",
-            len(sampled_frames), MAX_FRAMES_PER_REQUEST,
+            len(sampled_frames),
+            MAX_FRAMES_PER_REQUEST,
         )
 
     # Add each sampled frame as inline image bytes
@@ -306,9 +312,11 @@ def _build_sampled_frame_contents(
         parts.append(types.Part.from_bytes(data=data, mime_type=mime))
 
     # Append prompt with frame count hint
-    parts.append(types.Part.from_text(
-        text=f"[{len(selected)} sampled frame(s) provided above, sample_0000 through sample_{len(selected)-1:04d}.]\n\n{prompt}"
-    ))
+    parts.append(
+        types.Part.from_text(
+            text=f"[{len(selected)} sampled frame(s) provided above, sample_0000 through sample_{len(selected) - 1:04d}.]\n\n{prompt}"
+        )
+    )
 
     return parts
 
@@ -316,6 +324,7 @@ def _build_sampled_frame_contents(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def extract_knowledge(
     file: SourceFile,
@@ -345,7 +354,6 @@ def extract_knowledge(
     Raises:
         ExtractionError: Caller logs and skips
     """
-    from google import genai
     from google.genai import types
 
     client = _get_client(config)
@@ -357,7 +365,8 @@ def extract_knowledge(
     if file.type == FileType.VIDEO and sampled_frames:
         log.info(
             "Extracting %s with %d sampled frames (AI slide selection)...",
-            file.path.name, len(sampled_frames),
+            file.path.name,
+            len(sampled_frames),
         )
         contents = _build_sampled_frame_contents(client, file, sampled_frames, config, custom_prompt=custom_prompt)
 
@@ -393,9 +402,7 @@ def extract_knowledge(
             text_content = file.path.read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
             raise ExtractionError(f"Could not read {file.path.name}: {exc}")
-        contents = [types.Part.from_text(
-            text=f"{prompt}\n\n--- FILE CONTENT ---\n{text_content[:50000]}"
-        )]
+        contents = [types.Part.from_text(text=f"{prompt}\n\n--- FILE CONTENT ---\n{text_content[:50000]}")]
 
     else:
         raise ExtractionError(f"Unsupported file type {file.type} for {file.path.name}")
@@ -440,7 +447,10 @@ def extract_knowledge(
 
     log.info(
         "Extracted: '%s' | slides=%d | topics=%s | tokens=%d",
-        result.title, len(result.slides), result.topics[:3], tokens,
+        result.title,
+        len(result.slides),
+        result.topics[:3],
+        tokens,
     )
     return result
 
@@ -477,12 +487,14 @@ def extract_from_text(
 
     log.info(
         "Extracting %s via text-only AI (%d chars, model=%s)...",
-        file.path.name, len(text_content), model,
+        file.path.name,
+        len(text_content),
+        model,
     )
 
-    contents = [types.Part.from_text(
-        text=f"{prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
-    )]
+    contents = [
+        types.Part.from_text(text=f"{prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}")
+    ]
 
     response = client.models.generate_content(
         model=model,
@@ -521,7 +533,104 @@ def extract_from_text(
 
     log.info(
         "Tier 2 extracted: '%s' | topics=%s | tokens=%d",
-        result.title, result.topics[:3], tokens,
+        result.title,
+        result.topics[:3],
+        tokens,
+    )
+    return result
+
+
+def extract_pptx_multimodal(
+    file: SourceFile,
+    config: dict,
+    rendered_slides: list,
+    custom_prompt: str | None = None,
+) -> ExtractionResult:
+    """
+    Tier 3 for PPTX: Send rendered slide PNGs to Gemini multimodal.
+
+    Unlike video extraction, there's no video file upload — just inline
+    slide images. Every rendered slide is sent (no AI selection needed
+    since each slide is intentional content, unlike video frames).
+
+    Args:
+        file: SourceFile (the original .pptx)
+        config: Unified config dict
+        rendered_slides: List of RenderedSlide from slides.renderer
+        custom_prompt: Optional custom prompt override
+
+    Returns:
+        ExtractionResult with per-slide analysis
+    """
+    from google.genai import types
+
+    client = _get_client(config)
+    model = _get_model(config)
+
+    prompt = _get_prompt(config, "extract_pptx_slides", custom_prompt=custom_prompt)
+
+    log.info(
+        "Extracting %s via PPTX multimodal (%d slides)...",
+        file.path.name,
+        len(rendered_slides),
+    )
+
+    # Build content: slide images + prompt
+    parts = []
+    for rs in rendered_slides:
+        mime = "image/png"
+        data = rs.image_path.read_bytes()
+        parts.append(types.Part.from_bytes(data=data, mime_type=mime))
+
+    parts.append(
+        types.Part.from_text(
+            text=f"[{len(rendered_slides)} slide image(s) provided above, slides 1 through {len(rendered_slides)}.]\n\n{prompt}"
+        )
+    )
+
+    response = client.models.generate_content(
+        model=model,
+        contents=parts,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+        ),
+    )
+
+    response_text = response.text or ""
+    tokens = 0
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        tokens = getattr(response.usage_metadata, "total_token_count", 0) or 0
+
+    data = _parse_response(response_text, file)
+
+    # Preserve raw output
+    raw_data = copy.deepcopy(data) if custom_prompt else None
+
+    # Post-process
+    pp = post_process_extraction(
+        raw_result=data,
+        source_tool="knowledge-extractor",
+        source_file=str(file.path),
+    )
+    if pp.changes:
+        log.debug("Normalized: %s", pp.changes)
+
+    result = _result_from_json(pp.data, file, tokens)
+    result.links_line = pp.links_line
+    result.validation_result = pp.validation_result.value
+    if raw_data is not None:
+        result.raw_json = raw_data
+
+    # RFP agent enrichment
+    result.source_date = extract_source_date(file.path)
+    result.facts = _enrich_facts(data, file, result.source_date, None)
+
+    log.info(
+        "PPTX multimodal extracted: '%s' | %d slides | topics=%s | tokens=%d",
+        result.title,
+        len(result.slides),
+        result.topics[:3],
+        tokens,
     )
     return result
 
@@ -545,7 +654,8 @@ def extract_local(
     """
     log.info(
         "Local extraction for %s (%d chars, no API call)...",
-        file.path.name, text_result.char_count,
+        file.path.name,
+        text_result.char_count,
     )
 
     # Build a minimal raw result for post-processing

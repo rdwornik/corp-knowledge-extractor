@@ -1,0 +1,78 @@
+You are extracting structured knowledge from a document for a pre-sales knowledge base.
+This is a {doc_type} document. Extract ALL specific, factual information — not summaries.
+
+Output ONLY valid JSON with this structure:
+
+{{
+  "base": {{
+    "title": "descriptive title using full product/company names",
+    "summary": "2-3 sentence summary of what this document covers and why it matters",
+    "key_facts": [
+      "Specific fact 1 with numbers/details (cite section/page if possible)",
+      "Specific fact 2 with concrete data points",
+      "..."
+    ],
+    "entities_mentioned": ["Company A", "Product B", "Person C"],
+    "topics": ["topic1", "topic2"],
+    "products": ["product1", "product2"],
+    "people": ["Full Name (Role if known)"],
+    "domains": ["domain1"],
+    "doc_type": "{doc_type}",
+    "extraction_version": 2,
+    "depth": "deep",
+    "content_type": "document",
+    "language": "en",
+    "quality": "high",
+    "source_type": "documentation",
+    "layer": "reference",
+    "confidentiality": "internal",
+    "authority": "approved",
+    "client": null,
+    "facts": [
+      {{"fact": "Concrete atomic fact with specific detail", "page": 3}},
+      {{"fact": "Another specific fact or capability", "page": 5}}
+    ]
+  }},
+  "overlay": {{
+    {overlay_fields}
+  }}
+}}
+
+IMPORTANT: Do NOT redact, censor, or replace any company names, product names, or brand names found in the source document. Output them exactly as they appear in the source text. For example, write "Blue Yonder" not "[REDACTED]".
+
+RULES:
+- Extract SPECIFIC facts: numbers, percentages, names, dates, thresholds, versions. Not vague statements.
+- key_facts should contain 10-30 specific, citable facts from the document. More for longer documents.
+- If information is NOT in the document, use null. NEVER invent or assume.
+- For overlay fields: populate every field where the document contains relevant information.
+- If you are unsure about a value, include it but add "(needs verification)" suffix.
+- Prefer direct facts over interpretations.
+- Output valid JSON only. No markdown, no preamble, no explanation.
+- Do NOT use [[Obsidian links]] anywhere.
+- NEVER use double-quote characters (") inside JSON string values — use single quotes instead.
+
+TOPIC/PEOPLE/PRODUCT NAMING:
+- Use CANONICAL TERMS from the taxonomy list provided below when a concept matches.
+- topics: maximum 8, ranked by importance
+- products: maximum 4
+- people: maximum 3, prioritize authors/presenters
+
+KNOWLEDGE DIMENSION RULES:
+- domains: assign 1-3 from the KNOWLEDGE DOMAINS list provided below. Do NOT invent new domains.
+- source_type: classify what kind of source this is
+- layer: "operational" if about a specific customer/deal, "learning" if general knowledge,
+  "reference" if reusable template/playbook
+- confidentiality: "confidential" if mentions specific client names/budgets/deals,
+  "internal" for general content, "public" only if explicitly public-facing,
+  "restricted" for M&A, non-public pricing, security details
+- authority: "authoritative" for official product docs and signed agreements,
+  "approved" for reviewed presentations and validated content,
+  "tribal" for meeting notes, informal discussions, inferences
+- client: extract client/customer name if mentioned, null otherwise
+
+FACT EXTRACTION RULES:
+- The document text contains [PAGE N], [SLIDE N], or [SECTION N] markers.
+- Extract concrete, atomic facts into the "facts" array.
+- Each fact MUST include the page/slide/section number where it was found.
+- A fact is a single specific claim, number, decision, or capability statement.
+- Aim for 10-30 facts per document (more for longer/richer documents).

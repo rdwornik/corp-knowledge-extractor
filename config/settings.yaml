@@ -204,6 +204,71 @@ prompts:
     - If the video has no slides (audio-only meeting), return empty slides array
     - NEVER use double-quote characters (") inside JSON string values — use single quotes or backticks instead
 
+  extract_pptx_slides: |
+    You are analyzing a PowerPoint presentation. Each image is a rendered slide.
+    Analyze EVERY slide and extract ALL factual content visible.
+
+    RULES:
+    - If a slide contains a diagram, describe what the diagram shows including all labels and connections
+    - If a slide contains a table, extract all rows and columns as structured data
+    - If a slide contains a chart, describe the trend and cite specific data points
+    - Do NOT summarize — capture EVERYTHING visible on the slide
+    - Every number, percentage, date, SLA, timeline, metric must appear in key_facts
+    - Title/divider slides: still include them but mark key_facts as empty
+    - Do NOT redact, censor, or replace any company names, product names, or brand names
+    - Do NOT use [[Obsidian links]] anywhere in your text
+
+    TOPIC/PEOPLE/PRODUCT NAMING:
+    - Use CANONICAL TERMS from the taxonomy list provided below when a concept matches.
+    - topics: maximum 8, ranked by importance
+    - products: maximum 4
+    - people: maximum 3
+
+    KNOWLEDGE DIMENSION RULES:
+    - domains: assign 1-3 from the KNOWLEDGE DOMAINS list provided below. Do NOT invent new domains.
+    - source_type: classify what kind of source this is
+    - layer: "operational" if about a specific customer/deal, "learning" if general knowledge,
+      "reference" if reusable template/playbook
+    - confidentiality: "confidential" if mentions specific client names/budgets/deals,
+      "internal" for general content, "public" only if explicitly public-facing
+    - authority: "authoritative" for official product docs, "approved" for reviewed content,
+      "tribal" for informal content
+    - client: extract client/customer name if mentioned, null otherwise
+
+    Respond ONLY with valid JSON (no markdown fences):
+    {
+      "title": "Descriptive presentation title",
+      "summary": "2-3 sentences — what this presentation covers and why it matters",
+      "key_points": ["insight 1", "insight 2"],
+      "topics": ["Topic Name"],
+      "people": ["Full Name (Role if known)"],
+      "products": ["Full Product Name"],
+      "domains": ["Domain1"],
+      "source_type": "documentation",
+      "layer": "reference",
+      "confidentiality": "internal",
+      "authority": "approved",
+      "client": null,
+      "content_type": "presentation",
+      "language": "en",
+      "quality": "full",
+      "slides": [
+        {
+          "slide_number": 1,
+          "slide_title": "Short title from the slide",
+          "speaker_insight": "What this slide communicates. Describe diagrams, tables, charts in detail. Bold first 2-3 words of each paragraph.",
+          "so_what": "Why this matters practically. One paragraph.",
+          "critical_notes": "Red flags, vague claims, missing sources. Null if nothing to flag.",
+          "key_facts": ["Specific fact with number/date", "Another concrete detail"]
+        }
+      ]
+    }
+
+    IMPORTANT:
+    - slide_number must match the order of images provided (1-based)
+    - Provide an entry for EVERY slide image
+    - NEVER use double-quote characters inside JSON string values — use single quotes instead
+
   synthesize: |
     You are synthesizing knowledge from multiple related files into a unified overview.
     Review the extracted knowledge from each file and create a combined synthesis.

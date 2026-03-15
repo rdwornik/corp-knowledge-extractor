@@ -1,4 +1,5 @@
 """Tests for tier routing logic."""
+
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -71,23 +72,26 @@ def test_no_text_routes_tier3(mock_extract):
 
 @patch("src.tier_router.extract_text")
 def test_pptx_always_tier2(mock_extract):
-    """PPTX always routes to Tier 2 — Gemini rejects PPTX MIME type."""
+    """Text-heavy PPTX routes to Tier 2."""
     mock_extract.return_value = TextExtractionResult(
-        text="x" * 5000, char_count=5000, extraction_quality="good",
-        extractor="python-pptx", has_images=True, slide_count=20
+        text="x" * 5000,
+        char_count=5000,
+        extraction_quality="good",
+        extractor="python-pptx",
+        has_images=True,
+        slide_count=20,
     )
     f = _make_file("deck.pptx", FileType.SLIDES)
     decision = route_tier(f)
     assert decision.tier == Tier.TEXT_AI
-    assert "blocked" in decision.reason.lower()
+    assert "pptx" in decision.reason.lower()
 
 
 @patch("src.tier_router.extract_text")
 def test_docx_always_tier2(mock_extract):
     """DOCX always routes to Tier 2 — Gemini rejects DOCX MIME type."""
     mock_extract.return_value = TextExtractionResult(
-        text="x" * 5000, char_count=5000, extraction_quality="good",
-        extractor="python-docx"
+        text="x" * 5000, char_count=5000, extraction_quality="good", extractor="python-docx"
     )
     f = _make_file("report.docx", FileType.DOCUMENT)
     decision = route_tier(f)
@@ -98,8 +102,7 @@ def test_docx_always_tier2(mock_extract):
 def test_xlsx_always_tier2(mock_extract):
     """XLSX always routes to Tier 2 — Gemini rejects XLSX MIME type."""
     mock_extract.return_value = TextExtractionResult(
-        text="x" * 5000, char_count=5000, extraction_quality="good",
-        extractor="openpyxl"
+        text="x" * 5000, char_count=5000, extraction_quality="good", extractor="openpyxl"
     )
     f = _make_file("data.xlsx", FileType.SPREADSHEET)
     decision = route_tier(f)
@@ -110,8 +113,7 @@ def test_xlsx_always_tier2(mock_extract):
 def test_pptx_tier2_even_with_no_text(mock_extract):
     """PPTX with failed extraction still caps at Tier 2, not Tier 3."""
     mock_extract.return_value = TextExtractionResult(
-        text="", char_count=0, extraction_quality="none",
-        extractor="python-pptx", error="empty"
+        text="", char_count=0, extraction_quality="none", extractor="python-pptx", error="empty"
     )
     f = _make_file("empty.pptx", FileType.SLIDES)
     decision = route_tier(f)

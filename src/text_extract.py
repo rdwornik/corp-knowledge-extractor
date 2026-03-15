@@ -16,7 +16,7 @@ Usage:
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class TextExtractionResult:
     """Result of local text extraction."""
+
     text: str
     char_count: int = 0
     page_count: int = 0
@@ -45,6 +46,7 @@ def extract_source_date(file_path: Path) -> str | None:
     try:
         if ext == ".pdf":
             import pdfplumber
+
             with pdfplumber.open(file_path) as pdf:
                 info = pdf.metadata or {}
                 date_str = info.get("CreationDate") or info.get("ModDate")
@@ -53,6 +55,7 @@ def extract_source_date(file_path: Path) -> str | None:
                 return None
         elif ext == ".pptx":
             from pptx import Presentation
+
             prs = Presentation(str(file_path))
             mod = prs.core_properties.modified
             if mod:
@@ -60,6 +63,7 @@ def extract_source_date(file_path: Path) -> str | None:
             return None
         elif ext == ".docx":
             import docx
+
             doc = docx.Document(str(file_path))
             mod = doc.core_properties.modified
             if mod:
@@ -67,6 +71,7 @@ def extract_source_date(file_path: Path) -> str | None:
             return None
         elif ext in (".xlsx", ".xlsm"):
             import openpyxl
+
             wb = openpyxl.load_workbook(str(file_path), read_only=True)
             mod = wb.properties.modified
             wb.close()

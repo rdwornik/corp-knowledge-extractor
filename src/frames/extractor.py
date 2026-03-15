@@ -14,7 +14,6 @@ Usage:
 """
 
 import logging
-import os
 from pathlib import Path
 
 import cv2
@@ -44,8 +43,8 @@ def extract_frames(
     frames_cfg = (config.get("processing") or {}).get("frames", {})
     dedup_cfg = (config.get("processing") or {}).get("deduplication", {})
 
-    sample_rate = frames_cfg.get("sample_rate", 1)          # seconds
-    threshold = frames_cfg.get("pixel_threshold", 0.05)     # 0.0–1.0
+    sample_rate = frames_cfg.get("sample_rate", 1)  # seconds
+    threshold = frames_cfg.get("pixel_threshold", 0.05)  # 0.0–1.0
     pixel_diff_thresh = frames_cfg.get("pixel_diff_threshold", 25)  # 0–255
     max_per_minute = frames_cfg.get("max_per_minute", 999)
     max_total = frames_cfg.get("max_total", 500)
@@ -64,7 +63,10 @@ def extract_frames(
 
     log.info(
         "Extracting frames: %s (%.1fs, %.1f fps, interval=%d frames)",
-        video_path.name, total_duration, fps, frame_interval,
+        video_path.name,
+        total_duration,
+        fps,
+        frame_interval,
     )
 
     # Temporary storage: list of (timestamp, grayscale_frame_data, bgr_frame_data)

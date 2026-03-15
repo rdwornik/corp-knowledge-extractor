@@ -91,9 +91,11 @@ def correlate_files(
         primary = _pick_primary(files)
         related = [f for f in files if f is not primary]
         # Use title from primary file's extraction if available
-        group_name = extracts.get(primary.name, {}) and getattr(
-            extracts.get(primary.name), "title", primary.name
-        ) or primary.name
+        group_name = (
+            extracts.get(primary.name, {})
+            and getattr(extracts.get(primary.name), "title", primary.name)
+            or primary.name
+        )
         if hasattr(group_name, "title") and callable(group_name.title):
             group_name = group_name.title()
         log.info("Small input (%d files) → single group: %s", len(files), group_name)
@@ -114,11 +116,13 @@ def correlate_files(
         extract = extracts.get(primary.name)
         group_name = extract.title if extract else prefix or primary.name
 
-        groups.append(FileGroup(
-            primary=primary,
-            related=related,
-            group_name=group_name,
-        ))
+        groups.append(
+            FileGroup(
+                primary=primary,
+                related=related,
+                group_name=group_name,
+            )
+        )
         log.info(
             "Group '%s': primary=%s, related=%s",
             group_name,

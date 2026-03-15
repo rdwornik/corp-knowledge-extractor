@@ -34,7 +34,7 @@ schema_version: 2
 ## Slide {{ slide.slide_number }}: {{ slide.slide_title }}
 *{{ slide.timestamp_approx }}*
 
-![Slide {{ slide.slide_number }}](../source/frames/slide_{{ "%03d" | format(slide.slide_number) }}.png)
+![Slide {{ slide.slide_number }}](../source/{{ slides_subdir | default('frames') }}/slide_{{ "%03d" | format(slide.slide_number) }}.png)
 
 {{ slide.speaker_insight }}
 

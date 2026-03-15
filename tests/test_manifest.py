@@ -1,4 +1,5 @@
 """Tests for manifest loading, status tracking, and batch processor."""
+
 import json
 import pytest
 from pathlib import Path
@@ -7,15 +8,19 @@ from src.manifest import Manifest, ManifestEntry, FileStatus, load_status, save_
 
 def test_load_manifest(tmp_path):
     manifest_file = tmp_path / "manifest.json"
-    manifest_file.write_text(json.dumps({
-        "schema_version": 1,
-        "project": "test-project",
-        "output_dir": str(tmp_path / "output"),
-        "files": [
-            {"id": "file-1", "path": str(tmp_path / "test.pdf"), "doc_type": "document", "name": "Test PDF"},
-            {"id": "file-2", "path": str(tmp_path / "test.pptx"), "doc_type": "presentation"},
-        ]
-    }))
+    manifest_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": "test-project",
+                "output_dir": str(tmp_path / "output"),
+                "files": [
+                    {"id": "file-1", "path": str(tmp_path / "test.pdf"), "doc_type": "document", "name": "Test PDF"},
+                    {"id": "file-2", "path": str(tmp_path / "test.pptx"), "doc_type": "presentation"},
+                ],
+            }
+        )
+    )
 
     manifest = Manifest.from_file(manifest_file)
     assert manifest.project == "test-project"
@@ -28,12 +33,16 @@ def test_load_manifest(tmp_path):
 
 def test_manifest_output_dir(tmp_path):
     manifest_file = tmp_path / "manifest.json"
-    manifest_file.write_text(json.dumps({
-        "schema_version": 1,
-        "project": "proj",
-        "output_dir": str(tmp_path / "out"),
-        "files": [],
-    }))
+    manifest_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": "proj",
+                "output_dir": str(tmp_path / "out"),
+                "files": [],
+            }
+        )
+    )
     manifest = Manifest.from_file(manifest_file)
     assert manifest.output_dir == tmp_path / "out"
 
@@ -47,24 +56,32 @@ def test_invalid_schema_version(tmp_path):
 
 def test_manifest_config_passthrough(tmp_path):
     manifest_file = tmp_path / "manifest.json"
-    manifest_file.write_text(json.dumps({
-        "schema_version": 1,
-        "project": "proj",
-        "output_dir": str(tmp_path),
-        "config": {"custom_key": "custom_value"},
-        "files": [],
-    }))
+    manifest_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": "proj",
+                "output_dir": str(tmp_path),
+                "config": {"custom_key": "custom_value"},
+                "files": [],
+            }
+        )
+    )
     manifest = Manifest.from_file(manifest_file)
     assert manifest.config == {"custom_key": "custom_value"}
 
 
 def test_manifest_default_config(tmp_path):
     manifest_file = tmp_path / "manifest.json"
-    manifest_file.write_text(json.dumps({
-        "schema_version": 1,
-        "output_dir": str(tmp_path),
-        "files": [],
-    }))
+    manifest_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "output_dir": str(tmp_path),
+                "files": [],
+            }
+        )
+    )
     manifest = Manifest.from_file(manifest_file)
     assert manifest.config == {}
     assert manifest.project == "unknown"
@@ -117,21 +134,25 @@ def test_manifest_entry_client_project_defaults():
 def test_manifest_parses_client_project(tmp_path):
     """Client and project should be parsed from manifest JSON."""
     manifest_file = tmp_path / "manifest.json"
-    manifest_file.write_text(json.dumps({
-        "schema_version": 1,
-        "project": "Lenzing_Planning",
-        "output_dir": str(tmp_path / "output"),
-        "files": [
+    manifest_file.write_text(
+        json.dumps(
             {
-                "id": "file-1",
-                "path": str(tmp_path / "test.pdf"),
-                "doc_type": "document",
-                "name": "Test",
-                "client": "Lenzing AG",
+                "schema_version": 1,
                 "project": "Lenzing_Planning",
+                "output_dir": str(tmp_path / "output"),
+                "files": [
+                    {
+                        "id": "file-1",
+                        "path": str(tmp_path / "test.pdf"),
+                        "doc_type": "document",
+                        "name": "Test",
+                        "client": "Lenzing AG",
+                        "project": "Lenzing_Planning",
+                    }
+                ],
             }
-        ]
-    }))
+        )
+    )
     manifest = Manifest.from_file(manifest_file)
     assert manifest.files[0].client == "Lenzing AG"
     assert manifest.files[0].project == "Lenzing_Planning"
@@ -140,14 +161,16 @@ def test_manifest_parses_client_project(tmp_path):
 def test_manifest_client_project_optional(tmp_path):
     """Client and project are optional in manifest JSON."""
     manifest_file = tmp_path / "manifest.json"
-    manifest_file.write_text(json.dumps({
-        "schema_version": 1,
-        "project": "proj",
-        "output_dir": str(tmp_path / "output"),
-        "files": [
-            {"id": "file-1", "path": str(tmp_path / "test.pdf"), "doc_type": "document"}
-        ]
-    }))
+    manifest_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "project": "proj",
+                "output_dir": str(tmp_path / "output"),
+                "files": [{"id": "file-1", "path": str(tmp_path / "test.pdf"), "doc_type": "document"}],
+            }
+        )
+    )
     manifest = Manifest.from_file(manifest_file)
     assert manifest.files[0].client is None
     assert manifest.files[0].project is None

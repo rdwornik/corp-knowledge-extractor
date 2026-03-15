@@ -1,4 +1,5 @@
 """Tests for local text extraction (Tier 1)."""
+
 import pytest
 from pathlib import Path
 from src.text_extract import extract_text, TextExtractionResult, _assess_quality
@@ -43,9 +44,10 @@ def test_extract_markdown(tmp_path):
 def test_extract_csv(tmp_path):
     """CSV files should extract with good quality."""
     f = tmp_path / "data.csv"
-    f.write_text("name,value,description\n" + "\n".join(
-        f"item_{i},{i},Description of item {i} with enough text" for i in range(20)
-    ))
+    f.write_text(
+        "name,value,description\n"
+        + "\n".join(f"item_{i},{i},Description of item {i} with enough text" for i in range(20))
+    )
     result = extract_text(f)
     assert result.extraction_quality == "good"
     assert result.extractor == "csv"

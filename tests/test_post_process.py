@@ -1,4 +1,5 @@
 """Tests for post-processing wrapper around corp-os-meta."""
+
 import pytest
 import yaml
 from pathlib import Path
@@ -162,11 +163,13 @@ def test_unknown_terms_logged(tmp_path):
         MockPath.side_effect = lambda *a, **k: Path(*a, **k) if a else MockPath.return_value
         # Directly patch the function to use our tmp path
         import src.post_process as pp_mod
+
         orig_fn = pp_mod._log_unknown_terms
 
         def _patched_log(terms):
             rp = tmp_path / "config" / "taxonomy_review.yaml"
             import yaml as _yaml
+
             data = {"pending": []}
             if rp.exists():
                 with open(rp, "r", encoding="utf-8") as f:
@@ -205,10 +208,12 @@ def test_unknown_terms_not_duplicated(tmp_path):
     (tmp_path / "config").mkdir()
 
     import src.post_process as pp_mod
+
     orig_fn = pp_mod._log_unknown_terms
 
     def _patched_log(terms):
         import yaml as _yaml
+
         rp = tmp_path / "config" / "taxonomy_review.yaml"
         data = {"pending": []}
         if rp.exists():
@@ -260,6 +265,7 @@ def test_product_taxonomy_normalization():
 # ---------------------------------------------------------------------------
 # Schema v2 tests — knowledge dimensions
 # ---------------------------------------------------------------------------
+
 
 def test_domains_normalized():
     """Domains should be normalized via corp-os-meta."""
@@ -365,12 +371,18 @@ def test_confidentiality_passthrough():
 # Systematic fix tests
 # ---------------------------------------------------------------------------
 
+
 def test_client_from_manifest_overrides_gemini():
     """When manifest provides client, it overrides Gemini extraction."""
     result = post_process_extraction(
         raw_result={
-            "title": "Test", "date": "2026-03-01", "type": "document",
-            "client": "Acme Corp", "topics": [], "products": [], "people": [],
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "client": "Acme Corp",
+            "topics": [],
+            "products": [],
+            "people": [],
             "summary": "Test",
         },
         source_file="test.md",
@@ -383,8 +395,11 @@ def test_project_from_manifest():
     """When manifest provides project, it appears in result data."""
     result = post_process_extraction(
         raw_result={
-            "title": "Test", "date": "2026-03-01", "type": "document",
-            "topics": [], "summary": "Test",
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": [],
+            "summary": "Test",
         },
         source_file="test.md",
         project="Lenzing_Planning",
@@ -396,8 +411,12 @@ def test_quality_mapping_high_to_full():
     """Gemini 'high' maps to schema 'full'."""
     result = post_process_extraction(
         raw_result={
-            "title": "Test", "date": "2026-03-01", "type": "document",
-            "quality": "high", "topics": [], "summary": "Test",
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "quality": "high",
+            "topics": [],
+            "summary": "Test",
         },
         source_file="test.md",
     )
@@ -408,8 +427,12 @@ def test_quality_mapping_medium_to_partial():
     """Gemini 'medium' maps to schema 'partial'."""
     result = post_process_extraction(
         raw_result={
-            "title": "Test", "date": "2026-03-01", "type": "document",
-            "quality": "medium", "topics": [], "summary": "Test",
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "quality": "medium",
+            "topics": [],
+            "summary": "Test",
         },
         source_file="test.md",
     )
@@ -420,8 +443,12 @@ def test_quality_mapping_low_to_fragment():
     """Gemini 'low' maps to schema 'fragment'."""
     result = post_process_extraction(
         raw_result={
-            "title": "Test", "date": "2026-03-01", "type": "document",
-            "quality": "low", "topics": [], "summary": "Test",
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "quality": "low",
+            "topics": [],
+            "summary": "Test",
         },
         source_file="test.md",
     )
@@ -432,8 +459,12 @@ def test_quality_passthrough_valid_value():
     """Schema-valid quality values pass through unchanged."""
     result = post_process_extraction(
         raw_result={
-            "title": "Test", "date": "2026-03-01", "type": "document",
-            "quality": "full", "topics": [], "summary": "Test",
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "quality": "full",
+            "topics": [],
+            "summary": "Test",
         },
         source_file="test.md",
     )
@@ -444,6 +475,7 @@ def test_no_unicode_escape_in_frontmatter():
     """Domains with & should not be escaped to \\u0026 in tojson_raw."""
     import json
     from src.synthesize import _tojson_raw
+
     result = _tojson_raw(["Platform & Architecture"])
     assert "&" in result
     assert "\\u0026" not in result
@@ -452,6 +484,6 @@ def test_no_unicode_escape_in_frontmatter():
 def test_backslash_normalized_in_source():
     """Source paths should use forward slashes after normalization."""
     path = "C:\\Users\\test\\file.pdf"
-    normalized = path.replace('\\', '/')
+    normalized = path.replace("\\", "/")
     assert "\\" not in normalized
     assert "C:/Users/test/file.pdf" == normalized

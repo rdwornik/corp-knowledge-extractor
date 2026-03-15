@@ -2,6 +2,7 @@
 Manifest schema for batch processing.
 Reads JSON manifest, validates entries, tracks status.
 """
+
 import json
 import logging
 from pathlib import Path
@@ -45,20 +46,20 @@ class Manifest:
             data = json.load(f)
 
         if data.get("schema_version", 0) != 1:
-            raise ValueError(
-                f"Unsupported manifest schema version: {data.get('schema_version')}"
-            )
+            raise ValueError(f"Unsupported manifest schema version: {data.get('schema_version')}")
 
         files = []
         for entry in data.get("files", []):
-            files.append(ManifestEntry(
-                id=entry["id"],
-                path=Path(entry["path"]),
-                doc_type=entry.get("doc_type", "document"),
-                name=entry.get("name", entry["id"]),
-                client=entry.get("client"),
-                project=entry.get("project"),
-            ))
+            files.append(
+                ManifestEntry(
+                    id=entry["id"],
+                    path=Path(entry["path"]),
+                    doc_type=entry.get("doc_type", "document"),
+                    name=entry.get("name", entry["id"]),
+                    client=entry.get("client"),
+                    project=entry.get("project"),
+                )
+            )
 
         return cls(
             schema_version=data["schema_version"],

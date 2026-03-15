@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class SampledFrame:
     path: Path
-    index: int          # Sequential sample index (0-based), matches sample_NNNN filename
+    index: int  # Sequential sample index (0-based), matches sample_NNNN filename
     timestamp_sec: float
 
 
@@ -57,7 +57,10 @@ def sample_frames(
 
     log.info(
         "Sampling %s: %.0fs duration, 1 frame every %gs, ~%d frames expected",
-        video_path.name, duration_sec, interval_sec, expected,
+        video_path.name,
+        duration_sec,
+        interval_sec,
+        expected,
     )
 
     frames: list[SampledFrame] = []
@@ -75,11 +78,13 @@ def sample_frames(
             filepath = output_dir / filename
             cv2.imwrite(str(filepath), frame)
 
-            frames.append(SampledFrame(
-                path=filepath,
-                index=sample_index,
-                timestamp_sec=timestamp,
-            ))
+            frames.append(
+                SampledFrame(
+                    path=filepath,
+                    index=sample_index,
+                    timestamp_sec=timestamp,
+                )
+            )
             sample_index += 1
 
         frame_number += 1

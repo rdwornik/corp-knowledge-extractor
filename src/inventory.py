@@ -80,12 +80,14 @@ def scan_input(input_path: Path, config: dict) -> list[SourceFile]:
         ft = _classify(input_path, ext_map)
         if ft == FileType.UNKNOWN:
             log.warning("Unknown file type: %s", input_path)
-        results.append(SourceFile(
-            path=input_path,
-            type=ft,
-            size_bytes=input_path.stat().st_size,
-            name=input_path.stem,
-        ))
+        results.append(
+            SourceFile(
+                path=input_path,
+                type=ft,
+                size_bytes=input_path.stat().st_size,
+                name=input_path.stem,
+            )
+        )
     elif input_path.is_dir():
         for p in sorted(input_path.rglob("*")):
             # Skip hidden files and directories
@@ -97,12 +99,14 @@ def scan_input(input_path: Path, config: dict) -> list[SourceFile]:
             if ft == FileType.UNKNOWN:
                 log.warning("Unknown file type (skipping): %s", p)
                 continue
-            results.append(SourceFile(
-                path=p,
-                type=ft,
-                size_bytes=p.stat().st_size,
-                name=p.stem,
-            ))
+            results.append(
+                SourceFile(
+                    path=p,
+                    type=ft,
+                    size_bytes=p.stat().st_size,
+                    name=p.stem,
+                )
+            )
     else:
         raise ValueError(f"Input path does not exist: {input_path}")
 

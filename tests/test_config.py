@@ -191,13 +191,7 @@ class TestConfigIntegrity:
 
     def test_all_config_files_loadable(self):
         """Verify all config files can be loaded without errors."""
-        config_files = [
-            "settings",
-            "processing",
-            "anonymize",
-            "categories",
-            "filters"
-        ]
+        config_files = ["settings", "processing", "anonymize", "categories", "filters"]
 
         for config_file in config_files:
             # Should not raise any exceptions

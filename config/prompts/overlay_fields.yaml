@@ -1,0 +1,63 @@
+# Overlay field templates for deep extraction prompt.
+# Each key maps to a doc_type; the value is the JSON field template
+# injected into the deep prompt's overlay section.
+
+architecture: |
+  "components": [{"name": "...", "description": "...", "role": "..."}],
+  "integration_points": [{"system": "...", "method": "...", "protocol": "..."}],
+  "data_flow": "description of data flow between components",
+  "apis": [{"endpoint": "...", "purpose": "...", "auth_method": "..."}],
+  "deployment_model": "single-tenant | multi-tenant | hybrid",
+  "scalability": "scaling characteristics and limits",
+  "tech_stack": ["technology1", "technology2"],
+  "environments": "dev/staging/prod details"
+
+product_doc: |
+  "components": [{"name": "...", "description": "...", "role": "..."}],
+  "integration_points": [{"system": "...", "method": "...", "protocol": "..."}],
+  "data_flow": "description of data flow between components",
+  "apis": [{"endpoint": "...", "purpose": "...", "auth_method": "..."}],
+  "deployment_model": "single-tenant | multi-tenant | hybrid",
+  "scalability": "scaling characteristics and limits",
+  "tech_stack": ["technology1", "technology2"],
+  "environments": "dev/staging/prod details"
+
+security: |
+  "certifications": [{"name": "...", "status": "current|expired|pending", "expiry": "YYYY-MM-DD"}],
+  "encryption": {"at_rest": "algorithm", "in_transit": "protocol"},
+  "data_residency": "where data is stored geographically",
+  "compliance_frameworks": ["framework1", "framework2"],
+  "access_control": "RBAC/ABAC/SSO details",
+  "audit_capabilities": "audit trail and retention details",
+  "dr_rto": "recovery time objective",
+  "dr_rpo": "recovery point objective"
+
+commercial: |
+  "pricing_model": "per-user | per-transaction | subscription | etc.",
+  "pricing_metrics": [{"metric": "...", "description": "..."}],
+  "sla_tiers": [{"tier_name": "...", "uptime": "...", "penalty": "..."}],
+  "contract_terms": "minimum term, billing frequency, renewal terms",
+  "support_tiers": [{"tier": "...", "response_time": "...", "scope": "..."}],
+  "environment_strategy": "shared/dedicated infrastructure details"
+
+rfp_response: |
+  "questions_answered": [{"question_summary": "...", "answer_summary": "...", "confidence": "high|medium|low"}],
+  "capabilities_demonstrated": ["capability1", "capability2"],
+  "gaps_identified": ["gap1", "gap2"],
+  "competitive_positioning": "how we position against competitors"
+
+meeting: |
+  "attendees": ["Person 1", "Person 2"],
+  "decisions_made": ["decision1", "decision2"],
+  "action_items": [{"owner": "...", "action": "...", "deadline": "..."}],
+  "questions_raised": ["question1", "question2"],
+  "concerns_expressed": ["concern1", "concern2"],
+  "next_steps": ["step1", "step2"]
+
+training: |
+  "attendees": ["Person 1", "Person 2"],
+  "decisions_made": ["decision1", "decision2"],
+  "action_items": [{"owner": "...", "action": "...", "deadline": "..."}],
+  "questions_raised": ["question1", "question2"],
+  "concerns_expressed": ["concern1", "concern2"],
+  "next_steps": ["step1", "step2"]
