@@ -22,7 +22,7 @@ from scripts.compare_reports import (
     compare_slides,
     compare_qa_pairs,
     determine_verdict,
-    extract_slides_from_markdown
+    extract_slides_from_markdown,
 )
 
 
@@ -116,18 +116,8 @@ class TestSlideComparison:
 
     def test_compare_slides_same(self):
         """Test with same slides."""
-        old = {
-            "slides": [
-                {"title": "Slide 1"},
-                {"title": "Slide 2"}
-            ]
-        }
-        new = {
-            "slides": [
-                {"title": "Slide 1"},
-                {"title": "Slide 2"}
-            ]
-        }
+        old = {"slides": [{"title": "Slide 1"}, {"title": "Slide 2"}]}
+        new = {"slides": [{"title": "Slide 1"}, {"title": "Slide 2"}]}
 
         result = compare_slides(old, new)
 
@@ -139,19 +129,8 @@ class TestSlideComparison:
 
     def test_compare_slides_removed(self):
         """Test with removed slides."""
-        old = {
-            "slides": [
-                {"title": "Slide 1"},
-                {"title": "Slide 2"},
-                {"title": "Slide 3"}
-            ]
-        }
-        new = {
-            "slides": [
-                {"title": "Slide 1"},
-                {"title": "Slide 3"}
-            ]
-        }
+        old = {"slides": [{"title": "Slide 1"}, {"title": "Slide 2"}, {"title": "Slide 3"}]}
+        new = {"slides": [{"title": "Slide 1"}, {"title": "Slide 3"}]}
 
         result = compare_slides(old, new)
 
@@ -160,17 +139,8 @@ class TestSlideComparison:
 
     def test_compare_slides_added(self):
         """Test with added slides."""
-        old = {
-            "slides": [
-                {"title": "Slide 1"}
-            ]
-        }
-        new = {
-            "slides": [
-                {"title": "Slide 1"},
-                {"title": "Slide 2"}
-            ]
-        }
+        old = {"slides": [{"title": "Slide 1"}]}
+        new = {"slides": [{"title": "Slide 1"}, {"title": "Slide 2"}]}
 
         result = compare_slides(old, new)
 
@@ -199,12 +169,7 @@ class TestVerdictDetermination:
 
     def test_verdict_improved(self):
         """Test improved verdict."""
-        comparison = {
-            "quality": {
-                "improvements": ["Better explanations", "Fewer junk frames"],
-                "regressions": []
-            }
-        }
+        comparison = {"quality": {"improvements": ["Better explanations", "Fewer junk frames"], "regressions": []}}
 
         verdict = determine_verdict(comparison)
 
@@ -213,12 +178,7 @@ class TestVerdictDetermination:
 
     def test_verdict_degraded(self):
         """Test degraded verdict."""
-        comparison = {
-            "quality": {
-                "improvements": [],
-                "regressions": ["Shorter explanations", "More junk"]
-            }
-        }
+        comparison = {"quality": {"improvements": [], "regressions": ["Shorter explanations", "More junk"]}}
 
         verdict = determine_verdict(comparison)
 
@@ -227,12 +187,7 @@ class TestVerdictDetermination:
 
     def test_verdict_mixed(self):
         """Test mixed verdict."""
-        comparison = {
-            "quality": {
-                "improvements": ["Better categorization"],
-                "regressions": ["Shorter explanations"]
-            }
-        }
+        comparison = {"quality": {"improvements": ["Better categorization"], "regressions": ["Shorter explanations"]}}
 
         verdict = determine_verdict(comparison)
 
@@ -241,12 +196,7 @@ class TestVerdictDetermination:
 
     def test_verdict_unchanged(self):
         """Test unchanged verdict."""
-        comparison = {
-            "quality": {
-                "improvements": [],
-                "regressions": []
-            }
-        }
+        comparison = {"quality": {"improvements": [], "regressions": []}}
 
         verdict = determine_verdict(comparison)
 
@@ -279,16 +229,14 @@ class TestComparisonIntegration:
                 f.write(json.dumps(qa) + "\n")
 
         # Create metadata
-        metadata = {
-            "slides_count": slides_count,
-            "qa_count": qa_count
-        }
+        metadata = {"slides_count": slides_count, "qa_count": qa_count}
         with open(report_dir / "metadata.json", "w", encoding="utf-8") as f:
             json.dump(metadata, f)
 
         # Create mock frames
         for i in range(slides_count):
-            (report_dir / "frames" / f"frame_{i:03d}.png").touch()
+            frame_path = str(report_dir / "frames" / f"frame_{i:03d}.png")
+            open(frame_path, "w").close()
 
         return str(report_dir)
 

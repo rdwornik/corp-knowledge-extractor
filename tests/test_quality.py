@@ -49,12 +49,8 @@ class QualityChecker:
         self.metadata_path = os.path.join(report_path, "metadata.json")
 
         # Load config thresholds
-        self.min_explanation_length = get(
-            "settings", "limits.min_explanation_length", 30
-        )
-        self.min_technical_length = get(
-            "settings", "limits.min_technical_details_length", 10
-        )
+        self.min_explanation_length = get("settings", "limits.min_explanation_length", 30)
+        self.min_technical_length = get("settings", "limits.min_technical_details_length", 10)
 
     def check_speaker_explanation_quality(self) -> Tuple[bool, str, Dict]:
         """
@@ -76,7 +72,7 @@ class QualityChecker:
             content = f.read()
 
         # Find all speaker explanations
-        pattern = r'\*\*Speaker Explanation:\*\* (.+?)(?:\n\n|\*\*|$)'
+        pattern = r"\*\*Speaker Explanation:\*\* (.+?)(?:\n\n|\*\*|$)"
         explanations = re.findall(pattern, content, re.DOTALL)
 
         if not explanations:
@@ -86,22 +82,13 @@ class QualityChecker:
         total = len(explanations)
         too_short = sum(1 for e in explanations if len(e.strip()) < self.min_explanation_length)
         empty = sum(1 for e in explanations if not e.strip())
-        generic_phrases = [
-            "the speaker discussed",
-            "the presenter explained",
-            "as mentioned",
-            "this slide shows"
-        ]
-        generic_count = sum(
-            1 for e in explanations
-            if any(phrase in e.lower() for phrase in generic_phrases)
-        )
+        generic_phrases = ["the speaker discussed", "the presenter explained", "as mentioned", "this slide shows"]
+        generic_count = sum(1 for e in explanations if any(phrase in e.lower() for phrase in generic_phrases))
 
         # Check for raw transcript indicators (too conversational)
         transcript_indicators = ["um", "uh", "you know", "like,", "okay so"]
         raw_transcript_count = sum(
-            1 for e in explanations
-            if sum(ind in e.lower() for ind in transcript_indicators) >= 2
+            1 for e in explanations if sum(ind in e.lower() for ind in transcript_indicators) >= 2
         )
 
         avg_length = sum(len(e) for e in explanations) / total if total > 0 else 0
@@ -113,7 +100,7 @@ class QualityChecker:
             "generic": generic_count,
             "raw_transcript_suspected": raw_transcript_count,
             "avg_length": round(avg_length, 1),
-            "min_length_threshold": self.min_explanation_length
+            "min_length_threshold": self.min_explanation_length,
         }
 
         # Determine pass/fail
@@ -124,13 +111,13 @@ class QualityChecker:
 
         issues = []
         if empty_ratio > 0.1:  # >10% empty
-            issues.append(f"{empty_ratio*100:.1f}% explanations are empty")
+            issues.append(f"{empty_ratio * 100:.1f}% explanations are empty")
         if short_ratio > 0.3:  # >30% too short
-            issues.append(f"{short_ratio*100:.1f}% explanations are too short")
+            issues.append(f"{short_ratio * 100:.1f}% explanations are too short")
         if generic_ratio > 0.5:  # >50% generic
-            issues.append(f"{generic_ratio*100:.1f}% explanations are generic")
+            issues.append(f"{generic_ratio * 100:.1f}% explanations are generic")
         if raw_ratio > 0.2:  # >20% raw transcript
-            issues.append(f"{raw_ratio*100:.1f}% appear to be raw transcript")
+            issues.append(f"{raw_ratio * 100:.1f}% appear to be raw transcript")
 
         if issues:
             return False, "Speaker explanation quality issues: " + "; ".join(issues), metrics
@@ -157,17 +144,12 @@ class QualityChecker:
             content = f.read()
 
         # Load junk patterns from config
-        junk_patterns = get("filters", "junk_patterns", [
-            "loading",
-            "thank you",
-            "any questions",
-            "q&a",
-            "break",
-            "transition"
-        ])
+        junk_patterns = get(
+            "filters", "junk_patterns", ["loading", "thank you", "any questions", "q&a", "break", "transition"]
+        )
 
         # Find all slide titles
-        title_pattern = r'^## (.+)$'
+        title_pattern = r"^## (.+)$"
         titles = re.findall(title_pattern, content, re.MULTILINE)
 
         if not titles:
@@ -190,11 +172,11 @@ class QualityChecker:
             "total_slides": total,
             "junk_slides": junk_count,
             "junk_ratio": round(junk_ratio, 3),
-            "junk_titles": junk_found[:5]  # First 5 examples
+            "junk_titles": junk_found[:5],  # First 5 examples
         }
 
         if junk_ratio > 0.1:  # >10% junk
-            return False, f"Too many junk slides: {junk_ratio*100:.1f}%", metrics
+            return False, f"Too many junk slides: {junk_ratio * 100:.1f}%", metrics
 
         return True, f"Junk filtering working well ({junk_count}/{total} junk slides)", metrics
 
@@ -215,7 +197,7 @@ class QualityChecker:
             content = f.read()
 
         # Find category headers (e.g., "# 🏗️ Infrastructure & Platform")
-        category_pattern = r'^# (.+)$'
+        category_pattern = r"^# (.+)$"
         categories = re.findall(category_pattern, content, re.MULTILINE)
 
         if not categories:
@@ -223,14 +205,14 @@ class QualityChecker:
 
         # Count slides per category (approximate - count ## after each #)
         category_distribution = {}
-        lines = content.split('\n')
+        lines = content.split("\n")
         current_category = None
 
         for line in lines:
-            if line.startswith('# ') and not line.startswith('## '):
+            if line.startswith("# ") and not line.startswith("## "):
                 current_category = line[2:].strip()
                 category_distribution[current_category] = 0
-            elif line.startswith('## ') and current_category:
+            elif line.startswith("## ") and current_category:
                 category_distribution[current_category] += 1
 
         total_slides = sum(category_distribution.values())
@@ -257,7 +239,7 @@ class QualityChecker:
             "distribution": category_distribution,
             "general_category": general_category,
             "general_count": general_count,
-            "general_ratio": round(general_ratio, 3)
+            "general_ratio": round(general_ratio, 3),
         }
 
         # Check balance
@@ -267,7 +249,7 @@ class QualityChecker:
             issues.append("Only one category (no categorization happening)")
 
         if general_ratio > 0.7:  # >70% in general
-            issues.append(f"{general_ratio*100:.1f}% slides in general category")
+            issues.append(f"{general_ratio * 100:.1f}% slides in general category")
 
         if issues:
             return False, "Category imbalance: " + "; ".join(issues), metrics
@@ -307,19 +289,9 @@ class QualityChecker:
         missing_category = 0
         missing_source = 0
 
-        generic_question_patterns = [
-            "what is this",
-            "what does this show",
-            "what is shown",
-            "what's this about"
-        ]
+        generic_question_patterns = ["what is this", "what does this show", "what is shown", "what's this about"]
 
-        generic_answer_patterns = [
-            "this shows",
-            "this is about",
-            "as shown",
-            "the slide shows"
-        ]
+        generic_answer_patterns = ["this shows", "this is about", "as shown", "the slide shows"]
 
         for qa in qa_pairs:
             # Check required fields
@@ -357,7 +329,7 @@ class QualityChecker:
             "missing_category": missing_category,
             "missing_source": missing_source,
             "avg_question_length": round(avg_question_length, 1),
-            "avg_answer_length": round(avg_answer_length, 1)
+            "avg_answer_length": round(avg_answer_length, 1),
         }
 
         # Determine pass/fail
@@ -368,15 +340,15 @@ class QualityChecker:
 
         generic_q_ratio = generic_questions / total
         if generic_q_ratio > 0.5:  # >50% generic questions
-            issues.append(f"{generic_q_ratio*100:.1f}% questions are generic")
+            issues.append(f"{generic_q_ratio * 100:.1f}% questions are generic")
 
         generic_a_ratio = generic_answers / total
         if generic_a_ratio > 0.5:  # >50% generic answers
-            issues.append(f"{generic_a_ratio*100:.1f}% answers are generic")
+            issues.append(f"{generic_a_ratio * 100:.1f}% answers are generic")
 
         missing_cat_ratio = missing_category / total
         if missing_cat_ratio > 0.3:  # >30% missing category
-            issues.append(f"{missing_cat_ratio*100:.1f}% missing category tags")
+            issues.append(f"{missing_cat_ratio * 100:.1f}% missing category tags")
 
         if issues:
             return False, "Q&A quality issues: " + "; ".join(issues), metrics
@@ -394,21 +366,13 @@ class QualityChecker:
             "speaker_explanation": self.check_speaker_explanation_quality(),
             "junk_frames": self.check_no_junk_frames(),
             "categories": self.check_categories_balanced(),
-            "qa_pairs": self.check_qa_pairs_quality()
+            "qa_pairs": self.check_qa_pairs_quality(),
         }
 
-        results = {
-            "report_path": self.report_path,
-            "checks": {},
-            "overall_pass": True
-        }
+        results = {"report_path": self.report_path, "checks": {}, "overall_pass": True}
 
         for check_name, (passed, message, metrics) in checks.items():
-            results["checks"][check_name] = {
-                "passed": passed,
-                "message": message,
-                "metrics": metrics
-            }
+            results["checks"][check_name] = {"passed": passed, "message": message, "metrics": metrics}
             if not passed:
                 results["overall_pass"] = False
 
@@ -424,9 +388,7 @@ def latest_report_path():
         pytest.skip(f"Output directory {output_dir} does not exist")
 
     subdirs = [
-        os.path.join(output_dir, d)
-        for d in os.listdir(output_dir)
-        if os.path.isdir(os.path.join(output_dir, d))
+        os.path.join(output_dir, d) for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))
     ]
 
     if not subdirs:
@@ -434,6 +396,13 @@ def latest_report_path():
 
     # Get most recent
     latest = max(subdirs, key=os.path.getmtime)
+
+    # Verify it contains actual report files
+    report_md = os.path.join(latest, "report.md")
+    knowledge_jsonl = os.path.join(latest, "knowledge.jsonl")
+    if not os.path.exists(report_md) and not os.path.exists(knowledge_jsonl):
+        pytest.skip(f"No report files found in {latest}")
+
     return latest
 
 
@@ -491,9 +460,9 @@ def generate_quality_report(report_path: str) -> None:
     checker = QualityChecker(report_path)
     results = checker.run_all_checks()
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print(f"QUALITY REPORT: {report_path}")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     for check_name, check_result in results["checks"].items():
         status = "✓ PASS" if check_result["passed"] else "✗ FAIL"
@@ -504,20 +473,17 @@ def generate_quality_report(report_path: str) -> None:
             print(f"  Metrics: {json.dumps(check_result['metrics'], indent=4)}")
         print()
 
-    print("="*60)
+    print("=" * 60)
     overall_status = "✓ ALL CHECKS PASSED" if results["overall_pass"] else "✗ SOME CHECKS FAILED"
     print(f"OVERALL: {overall_status}")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Quality check for generated reports")
-    parser.add_argument(
-        "--report",
-        help="Path to report directory (e.g., output/2024-01-15_1430)"
-    )
+    parser.add_argument("--report", help="Path to report directory (e.g., output/2024-01-15_1430)")
 
     args = parser.parse_args()
 

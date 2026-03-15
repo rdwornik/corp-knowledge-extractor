@@ -140,9 +140,9 @@ class TestScanFile:
         mock_slide.has_notes_slide = False
         mock_prs.slides = [mock_slide]
 
-        with patch("src.scan.Presentation", mock_prs.__class__, create=True):
-            with patch("pptx.Presentation", return_value=mock_prs):
-                result = scan_file(f)
+        mock_metadata = {"slide_count": 1, "title_slide": "Slide Title", "char_count": 11}
+        with patch("src.scan._scan_pptx", return_value=mock_metadata):
+            result = scan_file(f)
         assert result.extension == ".pptx"
 
     def test_extraction_error_handled(self, tmp_path):
