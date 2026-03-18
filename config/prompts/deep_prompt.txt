@@ -31,6 +31,10 @@ Output ONLY valid JSON with this structure:
     "facts": [
       {{"fact": "Concrete atomic fact with specific detail", "page": 3}},
       {{"fact": "Another specific fact or capability", "page": 5}}
+    ],
+    "slide_summaries": [
+      {{"slide_number": 1, "title": "Slide title", "content": "2-3 sentences describing what this slide covers and key points made."}},
+      {{"slide_number": 2, "title": "Another slide", "content": "2-3 sentences on the content and takeaways."}}
     ]
   }},
   "overlay": {{
@@ -39,6 +43,7 @@ Output ONLY valid JSON with this structure:
 }}
 
 IMPORTANT: Do NOT redact, censor, or replace any company names, product names, or brand names found in the source document. Output them exactly as they appear in the source text. For example, write "Blue Yonder" not "[REDACTED]".
+IMPORTANT: Use company and product names exactly as they appear. Do not duplicate or modify names. The company is 'Blue Yonder' not 'Blue Blue Yonder'.
 
 RULES:
 - Extract SPECIFIC facts: numbers, percentages, names, dates, thresholds, versions. Not vague statements.

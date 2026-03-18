@@ -32,7 +32,7 @@ from src.correlate import correlate_files
 from src.synthesize import build_package
 from src.reextract import reextract_package
 from src.frames.sampler import sample_frames, SampledFrame
-from src.compress import compress_video, needs_compression
+from src.compress import compress_video
 
 logging.basicConfig(
     level=logging.INFO,
@@ -135,6 +135,76 @@ def _keep_pptx_slides(rendered_slides: list, output_dir: Path) -> None:
         pass
 
 
+def _try_session_merge(files, extracts, extract_dir, _print_fn):
+    """Detect correlated PPTX+MP4 pairs and merge into session notes.
+
+    Safe wrapper — logs warnings but never crashes the pipeline.
+    """
+    import hashlib as _hashlib
+    import yaml as _yaml
+    from src.correlate_sessions import detect_stage1, confirm_stage2
+    from src.merge_session import merge_correlated
+
+    all_paths = [f.path for f in files]
+    session_group = detect_stage1(all_paths)
+
+    if not session_group.candidates:
+        return
+
+    _print_fn(f"\nSession merge: {len(session_group.candidates)} candidate pair(s) detected")
+
+    for candidate in session_group.candidates:
+        try:
+            # Load both extraction JSON files
+            pptx_stem = candidate.pptx_path.stem
+            video_stem = candidate.video_path.stem
+            pptx_json = extract_dir / f"{pptx_stem}.json"
+            video_json = extract_dir / f"{video_stem}.json"
+
+            if not pptx_json.exists() or not video_json.exists():
+                log.warning("Cannot merge — missing extraction JSON for %s or %s", pptx_stem, video_stem)
+                continue
+
+            pptx_ext = json.loads(pptx_json.read_text(encoding="utf-8"))
+            video_ext = json.loads(video_json.read_text(encoding="utf-8"))
+
+            # Stage 2 confirmation
+            candidate = confirm_stage2(candidate, pptx_ext, video_ext)
+
+            if candidate.merge_decision == "merge":
+                # Compute file hashes
+                pptx_hash = _hashlib.sha256(candidate.pptx_path.read_bytes()).hexdigest()
+                video_hash = _hashlib.sha256(candidate.video_path.read_bytes()).hexdigest()
+
+                merged = merge_correlated(
+                    pptx_extraction=pptx_ext,
+                    video_extraction=video_ext,
+                    pptx_path=candidate.pptx_path,
+                    video_path=candidate.video_path,
+                    pptx_hash=pptx_hash,
+                    video_hash=video_hash,
+                    correlation_confidence=int(candidate.stage2_confidence),
+                    correlation_method="filename_similarity + title_match",
+                )
+
+                # Write session note as YAML frontmatter + markdown
+                session_md_path = extract_dir / f"session_{merged['session_id']}.md"
+                fm_yaml = _yaml.dump(merged["frontmatter"], default_flow_style=False, allow_unicode=True, sort_keys=False)
+                session_content = f"---\n{fm_yaml}---\n\n# {merged['frontmatter']['title']}\n\n{merged['markdown']}"
+                session_md_path.write_text(session_content, encoding="utf-8")
+
+                _print_fn(f"  Merged: {candidate.pptx_path.name} + {candidate.video_path.name} -> {session_md_path.name}")
+                log.info("Merged session: %s", merged["session_id"])
+
+            elif candidate.merge_decision == "crosslink":
+                _print_fn(f"  Crosslinked (low confidence): {candidate.pptx_path.name} <-> {candidate.video_path.name}")
+
+        except Exception as exc:
+            log.warning("Session merge failed for %s <-> %s: %s",
+                        candidate.pptx_path.name, candidate.video_path.name, exc)
+            _print_fn(f"  [WARN] Merge failed: {exc}")
+
+
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
@@ -157,7 +227,8 @@ def cli(ctx):
 @click.option("--prompt-file", type=click.Path(exists=True), default=None,
               help="Custom extraction prompt file (replaces default prompt)")
 @click.option("--model", default=None, help="Override Gemini model (default from settings.yaml)")
-def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None):
+@click.option("--no-compress", is_flag=True, help="Skip FFmpeg compression (fast testing; may cause h264 decode errors)")
+def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None, no_compress: bool):
     """Process a file or folder into a knowledge package.
 
     INPUT_PATH defaults to the data/input/ directory from config if not given.
@@ -236,21 +307,31 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
         _print(f"  Tier {decision.tier.value}: {f.path.name} ({decision.reason})")
 
     # --- 2. Compress videos ---
+    # FFmpeg re-encodes h264 which fixes codec errors and produces a clean
+    # stream for frame sampling.  --no-compress skips this for fast testing.
+    compressed_paths: dict[str, Path] = {}  # filename → compressed path
     for f in files:
         if f.type == FileType.VIDEO:
-            if needs_compression(f.path, config):
-                compressed_out = output_p / package_name / "source" / "video" / f.path.name
+            compressed_out = output_p / package_name / "source" / "video" / f.path.name
+            if no_compress:
+                compressed_out.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(f.path, compressed_out)
+                _print(f"\nCopied {f.path.name} (--no-compress)")
+            else:
                 _print(f"\nCompressing {f.path.name}...")
                 compress_video(f.path, compressed_out, config)
+                compressed_paths[f.name] = compressed_out
 
     # --- 3. Sample frames from videos ---
+    # Sample from the compressed copy (clean h264 stream) instead of the original.
     _print("\nSampling frames from videos...")
     sampled: dict[str, list[SampledFrame]] = {}  # stem → frames
     for f in files:
         if f.type == FileType.VIDEO:
+            sample_source = compressed_paths.get(f.name, f.path)
             temp_dir = output_p / package_name / "temp_frames" / f.name
             _print(f"  -> {f.path.name}")
-            frames = sample_frames(f.path, temp_dir, config)
+            frames = sample_frames(sample_source, temp_dir, config)
             sampled[f.name] = frames
             _print(f"    {len(frames)} frames sampled")
 
@@ -368,10 +449,22 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
                 "source_date": result.source_date,
                 "facts": result.facts,
                 "processed_at": _dt.now().isoformat(),
+                # Deep extraction fields
+                "extraction_version": result.extraction_version,
+                "depth": result.depth,
+                "doc_type": result.doc_type,
+                "key_facts": result.raw_json.get("key_facts") or [],
+                "entities_mentioned": result.raw_json.get("entities_mentioned") or [],
+                "overlay": result.overlay,
+                "freshness": result.freshness,
             }
         extract_json_path.write_text(json.dumps(extract_data, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
 
-    _print(f"\n[green]Done![/green]" if HAS_RICH else "\nDone!")
+    # --- 9. Session merge: detect + merge correlated PPTX+MP4 pairs ---
+    if input_p.is_dir() and len(files) > 1:
+        _try_session_merge(files, extracts, extract_dir, _print)
+
+    _print("\n[green]Done![/green]" if HAS_RICH else "\nDone!")
     _print(f"Package: {pkg_path}")
     if cost_total > 0:
         _print(f"Estimated API cost: ${cost_total:.4f}")

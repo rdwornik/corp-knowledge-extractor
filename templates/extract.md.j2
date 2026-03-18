@@ -21,7 +21,17 @@ quality: "{{ quality }}"
 tokens_used: {{ tokens_used }}
 source_tool: "{{ source_tool | default('knowledge-extractor') }}"
 schema_version: 2
----
+extraction_version: {{ extraction_version | default(1) }}
+depth: "{{ depth | default('standard') }}"
+{% if doc_type %}doc_type: "{{ doc_type }}"
+{% endif %}{% if key_facts %}key_facts: {{ key_facts | tojson_raw }}
+{% endif %}{% if entities_mentioned %}entities_mentioned: {{ entities_mentioned | tojson_raw }}
+{% endif %}{% if freshness %}source_path: "{{ freshness.source_path }}"
+source_hash: "{{ freshness.source_hash }}"
+source_mtime: "{{ freshness.source_mtime }}"
+extracted_at: "{{ freshness.extracted_at }}"
+{% endif %}{% if overlay and doc_type %}{{ doc_type }}_overlay: {{ overlay | tojson_raw }}
+{% endif %}---
 
 # {{ title }}
 
@@ -54,6 +64,15 @@ schema_version: 2
 {% endif %}
 
 ---
+{% endfor %}
+{% endif %}
+
+{% if slide_summaries %}
+{% for slide in slide_summaries %}
+## Slide {{ slide.slide_number }}: {{ slide.title }}
+
+{{ slide.content }}
+
 {% endfor %}
 {% endif %}
 

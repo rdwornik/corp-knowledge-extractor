@@ -29,13 +29,14 @@ class AnthropicProvider(ExtractionProvider):
         """Send text extraction request to Claude."""
         log.info("Calling Claude %s (%d max_tokens)...", request.model, request.max_tokens)
 
-        response = self.client.messages.create(
+        with self.client.messages.stream(
             model=request.model,
             max_tokens=request.max_tokens,
             system=request.system_prompt,
             messages=[{"role": "user", "content": request.user_prompt}],
             temperature=request.temperature,
-        )
+        ) as stream:
+            response = stream.get_final_message()
 
         text = response.content[0].text
         input_tokens = response.usage.input_tokens

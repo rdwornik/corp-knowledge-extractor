@@ -317,6 +317,17 @@ llm:
   # Whisper model for transcription
   whisper_model: "medium"
 
+  # Dynamic token budgets per extraction type
+  token_budgets:
+    standard: 8192
+    deep_base: 16384
+    deep_per_slide_over_20: 256
+    deep_max: 24576
+    multimodal_base: 8192
+    multimodal_per_minute_over_30: 128
+    multimodal_max: 16384
+    merge: 12288
+
 # ======================
 # TRANSCRIPTION SETTINGS
 # ======================

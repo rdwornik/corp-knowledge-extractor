@@ -1,0 +1,66 @@
+You are analyzing a video recording of a {doc_type} session. You receive the video AND sampled frame images from key slides.
+
+OUTPUT FORMAT: Respond with a SINGLE JSON object containing ALL sections below. No markdown, no backticks, no commentary.
+
+IMPORTANT: Do NOT redact, censor, or replace any company names, product names, or brand names. Output them exactly as they appear. Write 'Blue Yonder' not '[REDACTED]'.
+IMPORTANT: Use company and product names exactly as they appear. Do not duplicate or modify names. The company is 'Blue Yonder' not 'Blue Blue Yonder'.
+IMPORTANT: NEVER use double-quote characters (") inside JSON string values — use single quotes instead.
+
+## Per-Slide Analysis
+
+For EACH distinct slide visible in the sampled frames, create an entry in the "slides" array:
+
+- "frame_index": the sample_NNNN number (0-based) of the provided frame image that shows this slide
+- "slide_number": sequential slide number (1-based)
+- "slide_title": the heading visible on the slide
+- "timestamp_approx": approximate MM:SS when this slide appears in the video
+- "speaker_insight": What the speaker ACTUALLY SAID about this slide from the audio track. Focus on specifics, commitments, implications, decisions. Skip anything that just reads the slide. Start each paragraph with 2-3 bold words summarizing the point. Keep paragraphs short (2-3 sentences).
+- "so_what": 1-2 sentences on why this matters practically. Business implication, what the viewer should remember.
+- "critical_notes": Red flags, vague claims, unsupported assertions, things needing verification. Null if nothing to flag.
+- "key_facts": Array of specific facts from THIS slide. Every number, percentage, timeline, SLA, company name, metric, dollar amount, customer count must be captured. Empty array if no specific facts.
+
+RULES for slides:
+- Identify EVERY unique slide. Do not skip title slides or transition slides.
+- frame_index must match the sample_NNNN number (0-based) of the provided frame image.
+- speaker_insight must come from AUDIO, not from reading the slide.
+- If the video has no slides (audio-only meeting), return empty slides array.
+- Capture what the SPEAKER says — their commentary adds context not visible on the slide.
+
+## Global Structured Output
+
+After the slides array, include these top-level fields:
+
+"key_facts": A deduplicated global list of ALL specific, verifiable facts from the entire presentation. Each fact should include a slide reference like '(Slide N)'. Aim for 15-30 facts. Include: metrics, timelines, costs, customer names, product names, technical specifications, KPIs, decisions, commitments.
+
+"entities_mentioned": List of ALL companies, organizations, products, systems, and named individuals mentioned anywhere in the video or slides.
+
+"facts": Array of structured fact objects with slide references:
+[{{"fact": "Concrete atomic fact", "slide": 3}}, {{"fact": "Another fact", "slide": 7}}]
+
+"{doc_type}_overlay": Structured metadata specific to this document type:
+{{
+  {overlay_fields}
+}}
+
+## Required Top-Level Fields
+
+"title": Descriptive title using full product/company names
+"summary": 2-3 sentence executive summary — what matters here and why
+"key_points": Array of top insights (3-8 items)
+"topics": 5-8 topic keywords (use CANONICAL TERMS from taxonomy below when available)
+"products": Product names mentioned (maximum 4)
+"people": Speakers and named individuals with roles (maximum 3)
+"domains": 2-3 knowledge domains from the KNOWLEDGE DOMAINS list below
+"source_type": "training|meeting|documentation|demo|workshop"
+"layer": "operational" if about a specific customer/deal, "learning" if general knowledge, "reference" if reusable template/playbook
+"confidentiality": "confidential" if mentions specific client names/budgets/deals, "internal" for general content, "public" only if explicitly public-facing
+"authority": "authoritative" for official product docs, "approved" for reviewed presentations, "tribal" for informal content
+"client": Client/customer name if mentioned, null otherwise
+"content_type": "training|meeting|demo|presentation|workshop"
+"language": "en"
+"quality": "full|partial|fragment"
+"duration_min": Estimated duration in minutes
+"transcript_excerpt": Most important ~500 words from the speaker — decisions, specifics, not filler
+"doc_type": "{doc_type}"
+"extraction_version": 2
+"depth": "deep"

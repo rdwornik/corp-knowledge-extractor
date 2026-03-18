@@ -227,6 +227,16 @@ def build_package(
             project=result.project,
             valid_to=result.raw_json.get("valid_to"),
             slides_subdir="slides" if result.source_file.path.suffix.lower() == ".pptx" else "frames",
+            # Deep extraction fields
+            doc_type=result.doc_type,
+            extraction_version=result.extraction_version,
+            depth=result.depth,
+            key_facts=result.raw_json.get("key_facts") or [],
+            entities_mentioned=result.raw_json.get("entities_mentioned") or [],
+            overlay=result.overlay,
+            slide_summaries=result.raw_json.get("slide_summaries") or [],
+            # Freshness tracking
+            freshness=result.freshness,
         )
         out_path = extract_dir / f"{stem}.md"
         out_path.write_text(content, encoding="utf-8")

@@ -5,6 +5,7 @@ No pixel comparison. No change detection. Just dumb time-based sampling.
 AI (Gemini) decides which frames are unique slides, not pixel math.
 """
 
+import gc
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,10 @@ from pathlib import Path
 import cv2
 
 log = logging.getLogger(__name__)
+
+MAX_WIDTH = 1920
+MAX_HEIGHT = 1080
+GC_INTERVAL = 50  # Force garbage collection every N frames
 
 
 @dataclass
@@ -68,11 +73,25 @@ def sample_frames(
     sample_index = 0
 
     while True:
-        ret, frame = cap.read()
+        try:
+            ret, frame = cap.read()
+        except Exception as exc:
+            log.warning(
+                "cap.read() failed at frame %d for %s: %s — stopping with %d frames collected",
+                frame_number, video_path.name, exc, len(frames),
+            )
+            break
+
         if not ret:
             break
 
         if frame_number % frame_interval == 0 and sample_index < max_frames:
+            # Downscale oversized frames to cap memory usage
+            h, w = frame.shape[:2]
+            if w > MAX_WIDTH or h > MAX_HEIGHT:
+                scale = min(MAX_WIDTH / w, MAX_HEIGHT / h)
+                frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
+
             timestamp = frame_number / fps
             filename = f"sample_{sample_index:04d}.{output_format}"
             filepath = output_dir / filename
@@ -87,7 +106,11 @@ def sample_frames(
             )
             sample_index += 1
 
+        del frame
         frame_number += 1
+
+        if frame_number % GC_INTERVAL == 0:
+            gc.collect()
 
     cap.release()
     log.info("Sampled %d frames from %s", len(frames), video_path.name)

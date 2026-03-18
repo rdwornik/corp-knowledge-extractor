@@ -80,6 +80,14 @@ def post_process_extraction(
     raw_result.setdefault("source_type", "documentation")
     raw_result.setdefault("domains", [])
 
+    # Fix duplicated company names (Gemini sometimes doubles "Blue Yonder")
+    title = raw_result.get("title", "")
+    if "Blue Blue Yonder" in title:
+        raw_result["title"] = title.replace("Blue Blue Yonder", "Blue Yonder")
+    summary = raw_result.get("summary", "")
+    if "Blue Blue Yonder" in summary:
+        raw_result["summary"] = summary.replace("Blue Blue Yonder", "Blue Yonder")
+
     # Normalize using corp-os-meta taxonomy
     taxonomy = load_taxonomy()
     normalized_data, changes, unknown = normalize_frontmatter(raw_result, taxonomy)
@@ -108,6 +116,10 @@ def post_process_extraction(
         for product in normalized_data.get("products") or []:
             links_parts.append(f"[[{product}]]")
         for person in normalized_data.get("people") or []:
+            if isinstance(person, dict):
+                person = f"{person.get('name', '')} ({person.get('role', '')})"
+            elif not isinstance(person, str):
+                person = str(person)
             name = person.split("(")[0].strip()
             links_parts.append(f"[[{name}]]")
         links_line = "**Links:** " + " . ".join(links_parts) if links_parts else ""

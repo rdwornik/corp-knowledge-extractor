@@ -3,7 +3,11 @@
 import logging
 import os
 
+from dotenv import load_dotenv
+
 from src.providers.base import ExtractionProvider
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 

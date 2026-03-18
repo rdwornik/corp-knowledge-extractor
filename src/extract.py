@@ -35,7 +35,7 @@ from src.taxonomy_prompt import get_taxonomy_for_prompt
 log = logging.getLogger(__name__)
 
 # Max frames to send to Gemini in a single request (avoid token overload)
-MAX_FRAMES_PER_REQUEST = 200
+MAX_FRAMES_PER_REQUEST = 50
 
 
 @dataclass
@@ -81,6 +81,13 @@ class ExtractionResult:
     # RFP agent enrichment fields
     source_date: str | None = None
     facts: list[dict] = field(default_factory=list)
+    # Deep extraction fields
+    doc_type: str | None = None
+    extraction_version: int = 1
+    depth: str = "standard"
+    overlay: dict = field(default_factory=dict)
+    # Freshness tracking
+    freshness: dict = field(default_factory=dict)
 
 
 class ExtractionError(Exception):
@@ -322,6 +329,54 @@ def _build_sampled_frame_contents(
 
 
 # ---------------------------------------------------------------------------
+# Token budget computation
+# ---------------------------------------------------------------------------
+
+
+def compute_token_budget(
+    depth: str,
+    config: dict | None = None,
+    slide_count: int = 0,
+    duration_min: int = 0,
+) -> int:
+    """Compute dynamic token budget based on extraction type and content size.
+
+    Args:
+        depth: "standard", "deep", or "multimodal"
+        config: Unified config dict (reads llm.token_budgets). Falls back to defaults.
+        slide_count: Number of slides (for deep PPTX extraction)
+        duration_min: Video duration in minutes (for multimodal extraction)
+
+    Returns:
+        Token budget (max_tokens) for the LLM call
+    """
+    budgets = (config or {}).get("llm", {}).get("token_budgets", {})
+
+    if depth == "deep":
+        base = budgets.get("deep_base", 16384)
+        extra_slides = max(0, slide_count - 20)
+        per_slide = budgets.get("deep_per_slide_over_20", 256)
+        maximum = budgets.get("deep_max", 24576)
+        budget = min(base + extra_slides * per_slide, maximum)
+        log.info("Token budget: %d for depth=%s (slides=%d)", budget, depth, slide_count)
+        return budget
+
+    elif depth == "multimodal":
+        base = budgets.get("multimodal_base", 8192)
+        extra_minutes = max(0, duration_min - 30)
+        per_minute = budgets.get("multimodal_per_minute_over_30", 128)
+        maximum = budgets.get("multimodal_max", 16384)
+        budget = min(base + extra_minutes * per_minute, maximum)
+        log.info("Token budget: %d for depth=%s (duration=%dmin)", budget, depth, duration_min)
+        return budget
+
+    else:  # standard
+        budget = budgets.get("standard", 8192)
+        log.info("Token budget: %d for depth=%s", budget, depth)
+        return budget
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -355,20 +410,58 @@ def extract_knowledge(
         ExtractionError: Caller logs and skips
     """
     from google.genai import types
+    from src.doc_type_classifier import classify_doc_type, should_extract_deep
+    from src.deep_prompt import build_deep_multimodal_prompt
+    from src.freshness import compute_freshness_fields
 
     client = _get_client(config)
     model = _get_model(config)
 
     INLINE_SIZE_LIMIT = 20 * 1024 * 1024  # 20MB
 
+    # --- Classify doc type BEFORE Gemini call ---
+    doc_type = classify_doc_type(str(file.path))
+    use_deep = should_extract_deep(doc_type) and custom_prompt is None
+
+    # --- Estimate duration from sampled frames for token budget ---
+    estimated_duration_min = 0
+    if sampled_frames:
+        interval_sec = config.get("frame_sampling", {}).get("interval_sec", 10)
+        estimated_duration_min = int(len(sampled_frames) * interval_sec / 60)
+
     # --- Build content parts ---
     if file.type == FileType.VIDEO and sampled_frames:
         log.info(
-            "Extracting %s with %d sampled frames (AI slide selection)...",
+            "Extracting %s with %d sampled frames (~%dmin, doc_type=%s, deep=%s)...",
             file.path.name,
             len(sampled_frames),
+            estimated_duration_min,
+            doc_type,
+            use_deep,
         )
-        contents = _build_sampled_frame_contents(client, file, sampled_frames, config, custom_prompt=custom_prompt)
+        if use_deep:
+            # Unified deep multimodal prompt — single prompt with per-slide + structured output
+            deep_prompt = build_deep_multimodal_prompt(doc_type)
+            taxonomy = get_taxonomy_for_prompt()
+            unified_prompt = f"{deep_prompt}\n\n{taxonomy}"
+
+            # Upload video, add frames, append unified prompt (no system_instruction)
+            uploaded = _upload_and_wait(client, file.path, config)
+            contents = [types.Part.from_uri(file_uri=uploaded.uri, mime_type=uploaded.mime_type)]
+
+            selected = sampled_frames[:MAX_FRAMES_PER_REQUEST]
+            if len(sampled_frames) > MAX_FRAMES_PER_REQUEST:
+                log.warning("Capping frames sent to Gemini: %d → %d", len(sampled_frames), MAX_FRAMES_PER_REQUEST)
+            for sf in selected:
+                mime = mimetypes.guess_type(str(sf.path))[0] or "image/png"
+                contents.append(types.Part.from_bytes(data=sf.path.read_bytes(), mime_type=mime))
+
+            contents.append(types.Part.from_text(
+                text=f"[{len(selected)} sampled frame(s) provided above, sample_0000 through sample_{len(selected) - 1:04d}.]\n\n{unified_prompt}"
+            ))
+        else:
+            # Standard extract_with_slides prompt
+            contents = _build_sampled_frame_contents(client, file, sampled_frames, config, custom_prompt=custom_prompt)
 
     elif file.type in (FileType.VIDEO, FileType.AUDIO):
         log.info("Extracting %s (no frames)...", file.path.name)
@@ -407,12 +500,20 @@ def extract_knowledge(
     else:
         raise ExtractionError(f"Unsupported file type {file.type} for {file.path.name}")
 
-    # --- Call Gemini ---
+    # --- Compute dynamic token budget ---
+    multimodal_budget = compute_token_budget(
+        depth="multimodal",
+        config=config,
+        duration_min=estimated_duration_min,
+    )
+
+    # --- Call Gemini (no system_instruction — unified prompt in contents) ---
     response = client.models.generate_content(
         model=model,
         contents=contents,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
+            max_output_tokens=multimodal_budget,
         ),
     )
 
@@ -423,8 +524,15 @@ def extract_knowledge(
 
     data = _parse_response(response_text, file)
 
-    # Preserve raw Gemini output before post-processing mutates it
-    raw_data = copy.deepcopy(data) if custom_prompt else None
+    # --- Handle deep extraction: extract overlay from doc_type-specific key ---
+    overlay_data = {}
+    if use_deep:
+        overlay_key = f"{doc_type}_overlay"
+        if overlay_key in data:
+            overlay_data = data.pop(overlay_key) or {}
+
+    # Always preserve raw data so key_facts/entities flow to output
+    raw_data = copy.deepcopy(data)
 
     # Post-process: normalize terms, apply taxonomy, cap cardinality, build links line
     pp = post_process_extraction(
@@ -438,17 +546,29 @@ def extract_knowledge(
     result = _result_from_json(pp.data, file, tokens)
     result.links_line = pp.links_line
     result.validation_result = pp.validation_result.value
-    if raw_data is not None:
-        result.raw_json = raw_data
+    result.raw_json = raw_data
+
+    # Deep extraction v2 metadata
+    result.doc_type = doc_type
+    result.depth = "deep" if use_deep else "standard"
+    result.extraction_version = 2 if use_deep else 1
+    result.overlay = overlay_data
 
     # RFP agent enrichment: source_date, locator, polarity
     result.source_date = extract_source_date(file.path)
     result.facts = _enrich_facts(data, file, result.source_date, None)
 
+    # Freshness tracking
+    result.freshness = compute_freshness_fields(file.path)
+
     log.info(
-        "Extracted: '%s' | slides=%d | topics=%s | tokens=%d",
+        "Extracted: '%s' | slides=%d | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d",
         result.title,
         len(result.slides),
+        doc_type,
+        use_deep,
+        bool(overlay_data),
+        len(raw_data.get("key_facts") or []),
         result.topics[:3],
         tokens,
     )
@@ -462,57 +582,108 @@ def extract_from_text(
     custom_prompt: str | None = None,
 ) -> ExtractionResult:
     """
-    Tier 2: Send pre-extracted text to Gemini 2.0 Flash (text-only, cheaper).
+    Tier 2: Send pre-extracted text to AI provider (Claude Haiku or Gemini).
 
-    Uses the cheaper text model since we already have good text content
-    and don't need multimodal processing.
+    Routes through the provider abstraction layer. For deep-eligible doc types,
+    uses the deep extraction prompt with overlay fields. Falls back to standard
+    prompt for general documents. Validates response and escalates to Sonnet
+    on malformed JSON.
 
     Args:
         file: SourceFile metadata
         config: Unified config dict
         text_result: Pre-extracted text from local extraction (Tier 1)
+        custom_prompt: Optional custom prompt override (bypasses deep routing)
 
     Returns:
         ExtractionResult with AI-structured knowledge
     """
-    from google.genai import types
-
-    client = _get_client(config)
-    model = _get_model(config)
-
-    prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
+    from src.doc_type_classifier import classify_doc_type, should_extract_deep
+    from src.deep_prompt import build_deep_prompt
+    from src.providers.router import route_model, get_provider
+    from src.providers.base import ExtractionRequest
+    from src.providers.validator import validate_and_retry
+    from src.freshness import compute_freshness_fields
 
     # Truncate very long text to stay within token limits
     text_content = text_result.text[:80000]
 
+    # --- Classify doc type and decide extraction depth ---
+    doc_type = classify_doc_type(str(file.path))
+    use_deep = should_extract_deep(doc_type) and custom_prompt is None
+
+    # --- Route to correct model ---
+    model_override = config.get("model_override")
+    batch_mode = config.get("batch_mode", False)
+    model = route_model(
+        tier=2,
+        text_length=len(text_content),
+        model_override=model_override,
+        batch_mode=batch_mode,
+    )
+
     log.info(
-        "Extracting %s via text-only AI (%d chars, model=%s)...",
+        "Extracting %s via provider (%d chars, model=%s, doc_type=%s, deep=%s)...",
         file.path.name,
         len(text_content),
         model,
+        doc_type,
+        use_deep,
     )
 
-    contents = [
-        types.Part.from_text(text=f"{prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}")
-    ]
+    # --- Build prompt ---
+    if custom_prompt:
+        system_prompt = ""
+        user_prompt = f"{custom_prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
+    elif use_deep:
+        deep_prompt = build_deep_prompt(doc_type)
+        taxonomy = get_taxonomy_for_prompt()
+        system_prompt = "You are a structured knowledge extraction engine for a pre-sales knowledge base."
+        user_prompt = f"{deep_prompt}\n\n{taxonomy}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
+    else:
+        prompt = _get_prompt(config, "extract")
+        system_prompt = ""
+        user_prompt = f"{prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
 
-    response = client.models.generate_content(
+    # --- Compute dynamic token budget ---
+    slide_count = text_result.slide_count or 0
+    token_budget = compute_token_budget(
+        depth="deep" if use_deep else "standard",
+        config=config,
+        slide_count=slide_count,
+    )
+
+    # --- Call provider ---
+    request = ExtractionRequest(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
         model=model,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-        ),
+        max_tokens=token_budget,
+        temperature=0.2,
+        response_format="json",
     )
 
-    response_text = response.text or ""
-    tokens = 0
-    if hasattr(response, "usage_metadata") and response.usage_metadata:
-        tokens = getattr(response.usage_metadata, "total_token_count", 0) or 0
+    provider = get_provider(model)
+    response = provider.extract(request)
 
-    data = _parse_response(response_text, file)
+    # --- Validate and optionally escalate to Sonnet ---
+    response, was_escalated = validate_and_retry(response, request)
+    if was_escalated:
+        log.warning("Extraction for %s was escalated to Sonnet after validation failure", file.path.name)
 
-    # Preserve raw Gemini output before post-processing mutates it
-    raw_data = copy.deepcopy(data) if custom_prompt else None
+    tokens = response.input_tokens + response.output_tokens
+
+    # --- Parse response ---
+    data = _parse_response(response.text, file)
+
+    # --- Handle deep extraction base/overlay split ---
+    overlay_data = {}
+    if use_deep and "base" in data:
+        overlay_data = data.get("overlay", {})
+        data = data["base"]
+
+    # Preserve raw output before post-processing mutates it
+    raw_data = copy.deepcopy(data) if custom_prompt or use_deep else None
 
     # Post-process via corp-os-meta
     pp = post_process_extraction(
@@ -527,15 +698,28 @@ def extract_from_text(
     if raw_data is not None:
         result.raw_json = raw_data
 
+    # Deep extraction metadata
+    result.doc_type = doc_type
+    result.depth = "deep" if use_deep else "standard"
+    result.extraction_version = 2 if use_deep else 1
+    result.overlay = overlay_data
+
     # RFP agent enrichment: source_date, locator, polarity
     result.source_date = extract_source_date(file.path)
     result.facts = _enrich_facts(data, file, result.source_date, text_result)
 
+    # Freshness tracking
+    result.freshness = compute_freshness_fields(file.path)
+
     log.info(
-        "Tier 2 extracted: '%s' | topics=%s | tokens=%d",
+        "Tier 2 extracted: '%s' | model=%s | deep=%s | doc_type=%s | topics=%s | tokens=%d | cost=$%.6f",
         result.title,
+        model,
+        use_deep,
+        doc_type,
         result.topics[:3],
         tokens,
+        response.cost_estimate,
     )
     return result
 
@@ -563,16 +747,31 @@ def extract_pptx_multimodal(
         ExtractionResult with per-slide analysis
     """
     from google.genai import types
+    from src.doc_type_classifier import classify_doc_type, should_extract_deep
+    from src.deep_prompt import build_deep_multimodal_prompt
+    from src.freshness import compute_freshness_fields
 
     client = _get_client(config)
     model = _get_model(config)
 
-    prompt = _get_prompt(config, "extract_pptx_slides", custom_prompt=custom_prompt)
+    # --- Classify doc type BEFORE Gemini call ---
+    doc_type = classify_doc_type(str(file.path))
+    use_deep = should_extract_deep(doc_type) and custom_prompt is None
+
+    # Choose prompt: unified deep multimodal or standard extract_pptx_slides
+    if use_deep:
+        deep_prompt = build_deep_multimodal_prompt(doc_type)
+        taxonomy = get_taxonomy_for_prompt()
+        prompt = f"{deep_prompt}\n\n{taxonomy}"
+    else:
+        prompt = _get_prompt(config, "extract_pptx_slides", custom_prompt=custom_prompt)
 
     log.info(
-        "Extracting %s via PPTX multimodal (%d slides)...",
+        "Extracting %s via PPTX multimodal (%d slides, doc_type=%s, deep=%s)...",
         file.path.name,
         len(rendered_slides),
+        doc_type,
+        use_deep,
     )
 
     # Build content: slide images + prompt
@@ -588,11 +787,19 @@ def extract_pptx_multimodal(
         )
     )
 
+    # --- Compute token budget ---
+    slide_budget = compute_token_budget(
+        depth="deep" if use_deep else "standard",
+        config=config,
+        slide_count=len(rendered_slides),
+    )
+
     response = client.models.generate_content(
         model=model,
         contents=parts,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
+            max_output_tokens=slide_budget,
         ),
     )
 
@@ -603,8 +810,15 @@ def extract_pptx_multimodal(
 
     data = _parse_response(response_text, file)
 
-    # Preserve raw output
-    raw_data = copy.deepcopy(data) if custom_prompt else None
+    # --- Handle deep extraction: extract overlay from doc_type-specific key ---
+    overlay_data = {}
+    if use_deep:
+        overlay_key = f"{doc_type}_overlay"
+        if overlay_key in data:
+            overlay_data = data.pop(overlay_key) or {}
+
+    # Always preserve raw data so key_facts/entities flow to output
+    raw_data = copy.deepcopy(data)
 
     # Post-process
     pp = post_process_extraction(
@@ -618,17 +832,29 @@ def extract_pptx_multimodal(
     result = _result_from_json(pp.data, file, tokens)
     result.links_line = pp.links_line
     result.validation_result = pp.validation_result.value
-    if raw_data is not None:
-        result.raw_json = raw_data
+    result.raw_json = raw_data
+
+    # Deep extraction v2 metadata
+    result.doc_type = doc_type
+    result.depth = "deep" if use_deep else "standard"
+    result.extraction_version = 2 if use_deep else 1
+    result.overlay = overlay_data
 
     # RFP agent enrichment
     result.source_date = extract_source_date(file.path)
     result.facts = _enrich_facts(data, file, result.source_date, None)
 
+    # Freshness tracking
+    result.freshness = compute_freshness_fields(file.path)
+
     log.info(
-        "PPTX multimodal extracted: '%s' | %d slides | topics=%s | tokens=%d",
+        "PPTX multimodal extracted: '%s' | %d slides | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d",
         result.title,
         len(result.slides),
+        doc_type,
+        use_deep,
+        bool(overlay_data),
+        len(raw_data.get("key_facts") or []),
         result.topics[:3],
         tokens,
     )
@@ -683,6 +909,11 @@ def extract_local(
     # RFP agent enrichment: source_date, locator, polarity
     result.source_date = extract_source_date(file.path)
     result.facts = _enrich_facts(raw_result, file, result.source_date, text_result)
+
+    # Freshness tracking
+    from src.freshness import compute_freshness_fields
+
+    result.freshness = compute_freshness_fields(file.path)
 
     log.info("Tier 1 local extraction: '%s'", result.title)
     return result
