@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from src.merge_session import merge_correlated, _dedupe_list, deduplicate_facts
+from src.merge_session import merge_correlated, _dedupe_list, deduplicate_facts, merge_training_overlays
 
 
 class TestMergeCorrelated:
@@ -205,3 +205,88 @@ class TestDeduplicateFacts:
         assert len(both_facts) == 1
         # PPTX version preserved
         assert both_facts[0]["fact"] == "Platform handles 1706 transactions per second"
+
+    def test_no_conflict_same_numbers(self):
+        """'30-50% reduction' from both → matched, no conflict."""
+        pptx = [{"fact": "30-50% reduction in stockholding", "source_modality": "pptx"}]
+        mp4 = [{"fact": "30-50% reduction in stockholding", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        assert len(result) == 1
+        assert result[0]["source_modality"] == "both"
+        assert not result[0].get("conflict_detected")
+
+    def test_real_conflict_different_numbers(self):
+        """'7-9% reduction' vs '7.5% reduction' → conflict detected."""
+        pptx = [{"fact": "7-9% stockholding reduction", "source_modality": "pptx"}]
+        mp4 = [{"fact": "7.5% stockholding reduction", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        conflicted = [f for f in result if f.get("conflict_detected")]
+        assert len(conflicted) >= 1
+
+    def test_no_conflict_rephrased(self):
+        """'1706 customers' vs '1,706 potential customers' → matched, no conflict."""
+        pptx = [{"fact": "1706 customers", "source_modality": "pptx"}]
+        mp4 = [{"fact": "1,706 potential customers", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        both_facts = [f for f in result if f["source_modality"] == "both"]
+        assert len(both_facts) == 1
+        assert not both_facts[0].get("conflict_detected")
+
+
+class TestMergeTrainingOverlays:
+    def test_merge_overlays_combines_attendees(self):
+        """PPTX has 3 attendees, MP4 has 5 with 2 overlap → 6 unique."""
+        pptx_overlay = {
+            "attendees": ["Alice", "Bob", "Charlie"],
+        }
+        mp4_overlay = {
+            "attendees": ["Bob", "Charlie", "Diana", "Eve", "Frank"],
+        }
+
+        result = merge_training_overlays(pptx_overlay, mp4_overlay)
+
+        assert len(result["attendees"]) == 6
+        names = [a.lower() if isinstance(a, str) else "" for a in result["attendees"]]
+        assert "alice" in names
+        assert "frank" in names
+
+    def test_merge_overlays_combines_action_items(self):
+        """Different action items from both → all preserved."""
+        pptx_overlay = {
+            "action_items": [
+                {"action": "Review architecture", "owner": "Alice"},
+            ],
+        }
+        mp4_overlay = {
+            "action_items": [
+                {"action": "Schedule follow-up meeting", "owner": "Bob"},
+                {"action": "Update documentation", "owner": "Charlie"},
+            ],
+        }
+
+        result = merge_training_overlays(pptx_overlay, mp4_overlay)
+
+        assert len(result["action_items"]) == 3
+
+    def test_merge_overlays_one_empty(self):
+        """MP4 has no overlay → PPTX overlay returned as-is."""
+        pptx_overlay = {
+            "attendees": ["Alice"],
+            "decisions_made": ["Approved migration plan"],
+        }
+
+        result = merge_training_overlays(pptx_overlay, {})
+
+        assert result["attendees"] == ["Alice"]
+        assert result["decisions_made"] == ["Approved migration plan"]
+
+    def test_merge_overlays_both_empty(self):
+        """Both empty → empty overlay."""
+        result = merge_training_overlays({}, {})
+        assert result == {}

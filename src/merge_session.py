@@ -49,14 +49,22 @@ def merge_correlated(
     mp4_facts = _tag_facts(video_extraction.get("key_facts") or [], "mp4")
     key_facts = deduplicate_facts(pptx_facts, mp4_facts)
 
-    # Overlay from PPTX
-    overlay = None
+    # Overlay from both sources — merge PPTX + MP4
+    pptx_overlay = None
+    mp4_overlay = None
     overlay_type = None
     for key in pptx_extraction:
         if key.endswith("_overlay"):
-            overlay = pptx_extraction[key]
+            pptx_overlay = pptx_extraction[key]
             overlay_type = key
             break
+    for key in video_extraction:
+        if key.endswith("_overlay"):
+            mp4_overlay = video_extraction[key]
+            if not overlay_type:
+                overlay_type = key
+            break
+    overlay = merge_training_overlays(pptx_overlay or {}, mp4_overlay or {})
 
     title = pptx_extraction.get("title") or video_extraction.get("title") or "Untitled Session"
 
@@ -127,6 +135,60 @@ def merge_correlated(
         "markdown": markdown,
         "session_id": session_id,
     }
+
+
+def merge_training_overlays(pptx_overlay: dict, mp4_overlay: dict) -> dict:
+    """Merge overlay fields from PPTX and MP4 sources.
+
+    MP4 typically has richer attendees (actual names) and action_items (with deadlines).
+    PPTX typically has structured concerns and questions from the deck.
+    """
+    if not pptx_overlay and not mp4_overlay:
+        return {}
+    if not mp4_overlay:
+        return dict(pptx_overlay)
+    if not pptx_overlay:
+        return dict(mp4_overlay)
+
+    merged = {}
+
+    # List fields: deduplicate by string content
+    list_fields = [
+        "attendees", "decisions_made", "action_items",
+        "questions_raised", "concerns_expressed", "next_steps",
+    ]
+    for field in list_fields:
+        pptx_items = pptx_overlay.get(field) or []
+        mp4_items = mp4_overlay.get(field) or []
+        merged[field] = _dedupe_overlay_items(pptx_items + mp4_items)
+
+    # Copy any non-list fields from either source (PPTX takes precedence)
+    for key in set(list(pptx_overlay) + list(mp4_overlay)):
+        if key not in list_fields and key not in merged:
+            merged[key] = pptx_overlay.get(key) or mp4_overlay.get(key)
+
+    # Remove empty fields
+    return {k: v for k, v in merged.items() if v}
+
+
+def _dedupe_overlay_items(items: list) -> list:
+    """Deduplicate overlay items (strings or dicts) by content."""
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        if isinstance(item, dict):
+            # Dedup by primary text field (action, decision, question, etc.)
+            key_text = (
+                item.get("action") or item.get("decision") or
+                item.get("question") or item.get("concern") or
+                item.get("name") or str(item)
+            ).lower().strip()
+        else:
+            key_text = str(item).lower().strip()
+        if key_text not in seen:
+            seen.add(key_text)
+            result.append(item)
+    return result
 
 
 def _tag_facts(raw_facts: list, modality: str) -> list[dict]:

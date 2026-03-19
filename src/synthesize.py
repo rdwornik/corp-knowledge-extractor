@@ -112,24 +112,41 @@ def _run_synthesis(
         log.warning("No 'synthesize' prompt in config — skipping synthesis")
         return {}
 
-    # Build context from all extracts
-    extracts_summary = json.dumps(
-        [
-            {
-                "file": e.source_file.name,
-                "title": e.title,
-                "summary": e.summary,
-                "key_points": e.key_points,
-                "topics": e.topics,
-                "people": e.people,
-                "products": e.products,
-            }
-            for e in extracts.values()
-        ],
-        indent=2,
-    )
+    # Build context from all extracts — include facts, overlays, entities
+    extracts_data = []
+    for e in extracts.values():
+        entry = {
+            "file": e.source_file.name,
+            "title": e.title,
+            "summary": e.summary,
+            "key_points": e.key_points,
+            "topics": e.topics,
+            "people": e.people,
+            "products": e.products,
+        }
+        # Top 10 key_facts by length (longer = more specific)
+        if e.facts:
+            sorted_facts = sorted(e.facts, key=lambda f: len(f.get("fact", "")), reverse=True)
+            entry["key_facts"] = [f["fact"] for f in sorted_facts[:10]]
+        # Action items and decisions from overlay
+        if e.overlay:
+            if e.overlay.get("action_items"):
+                entry["action_items"] = e.overlay["action_items"]
+            if e.overlay.get("decisions_made"):
+                entry["decisions_made"] = e.overlay["decisions_made"]
+        # Entities
+        if e.raw_json.get("entities_mentioned"):
+            entry["entities_mentioned"] = e.raw_json["entities_mentioned"]
+        extracts_data.append(entry)
 
-    combined_prompt = f"{synth_prompt}\n\n--- EXTRACTED KNOWLEDGE FROM {len(extracts)} FILES ---\n{extracts_summary}"
+    extracts_summary = json.dumps(extracts_data, indent=2)
+
+    combined_prompt = (
+        f"{synth_prompt}\n\n"
+        f"--- EXTRACTED KNOWLEDGE FROM {len(extracts)} FILES ---\n{extracts_summary}\n\n"
+        "IMPORTANT: The synthesis should reference specific metrics, customer names, "
+        "and action items from the extracted data. Do not generalize — be specific."
+    )
 
     model = config.get("gemini", {}).get("model", "gemini-2.5-flash")
     client = genai.Client(api_key=api_key)
