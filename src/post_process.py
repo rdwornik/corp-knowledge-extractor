@@ -18,6 +18,7 @@ from corp_os_meta import (
 )
 from corp_os_meta.models import NoteFrontmatter
 from corp_os_meta.normalize import load_taxonomy
+from src.utils import normalize_string_list
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,11 @@ def post_process_extraction(
     raw_result.setdefault("source_type", "documentation")
     raw_result.setdefault("domains", [])
 
+    # Normalize list fields: LLMs sometimes return dicts instead of strings
+    for list_field in ("topics", "products", "people", "domains"):
+        if list_field in raw_result and isinstance(raw_result[list_field], list):
+            raw_result[list_field] = normalize_string_list(raw_result[list_field])
+
     # Fix duplicated company names (Gemini sometimes doubles "Blue Yonder")
     for str_field in ("title", "summary"):
         val = raw_result.get(str_field, "")
@@ -124,15 +130,11 @@ def post_process_extraction(
     else:
         # Quarantined — still generate links from raw data for the note
         links_parts = []
-        for topic in normalized_data.get("topics") or []:
+        for topic in normalize_string_list(normalized_data.get("topics") or []):
             links_parts.append(f"[[{topic}]]")
-        for product in normalized_data.get("products") or []:
+        for product in normalize_string_list(normalized_data.get("products") or []):
             links_parts.append(f"[[{product}]]")
-        for person in normalized_data.get("people") or []:
-            if isinstance(person, dict):
-                person = f"{person.get('name', '')} ({person.get('role', '')})"
-            elif not isinstance(person, str):
-                person = str(person)
+        for person in normalize_string_list(normalized_data.get("people") or []):
             name = person.split("(")[0].strip()
             links_parts.append(f"[[{name}]]")
         links_line = "**Links:** " + " . ".join(links_parts) if links_parts else ""

@@ -28,7 +28,7 @@ from pathlib import Path
 from src.inventory import SourceFile, FileType
 from src.frames.sampler import SampledFrame
 from src.text_extract import TextExtractionResult, extract_source_date
-from src.utils import parse_llm_json
+from src.utils import parse_llm_json, normalize_string_list
 from src.post_process import post_process_extraction
 from src.taxonomy_prompt import get_taxonomy_for_prompt
 
@@ -141,8 +141,22 @@ def _upload_and_wait(client, path: Path, config: dict):
     polling_sec = config.get("gemini", {}).get("polling_interval_sec", 5)
     upload_timeout = config.get("gemini", {}).get("upload_timeout_sec", 300)
 
+    # Warn about large files that may OOM during upload
+    size_mb = path.stat().st_size / (1024 * 1024) if path.exists() else 0
+    if size_mb > 300:
+        log.warning(
+            "File %s is %.0f MB — compression is recommended to avoid memory issues",
+            path.name, size_mb,
+        )
+
     log.info("Uploading %s to Gemini File API...", path.name)
-    uploaded = client.files.upload(file=path)
+    try:
+        uploaded = client.files.upload(file=path)
+    except MemoryError:
+        raise ExtractionError(
+            f"File too large for upload without compression ({size_mb:.0f} MB). "
+            f"Use compression (remove --no-compress flag) or reduce file size: {path.name}"
+        )
 
     deadline = time.time() + upload_timeout
     while True:
@@ -185,10 +199,10 @@ def _result_from_json(data: dict, source_file: SourceFile, tokens: int) -> Extra
         source_file=source_file,
         title=data.get("title") or source_file.name,
         summary=data.get("summary") or "",
-        key_points=data.get("key_points") or [],
-        topics=data.get("topics") or [],
-        people=data.get("people") or [],
-        products=data.get("products") or [],
+        key_points=normalize_string_list(data.get("key_points") or []),
+        topics=normalize_string_list(data.get("topics") or []),
+        people=normalize_string_list(data.get("people") or []),
+        products=normalize_string_list(data.get("products") or []),
         content_type=data.get("content_type") or data.get("type") or "unknown",
         language=data.get("language") or "en",
         quality=data.get("quality") or "medium",
@@ -199,7 +213,7 @@ def _result_from_json(data: dict, source_file: SourceFile, tokens: int) -> Extra
         tokens_used=tokens,
         source_type=data.get("source_type") or "documentation",
         layer=data.get("layer") or "learning",
-        domains=data.get("domains") or [],
+        domains=normalize_string_list(data.get("domains") or []),
         confidentiality=data.get("confidentiality") or "internal",
         authority=data.get("authority") or "tribal",
         client=data.get("client"),

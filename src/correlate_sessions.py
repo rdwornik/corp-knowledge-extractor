@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from src.utils import normalize_string_list
+
 logger = logging.getLogger(__name__)
 
 
@@ -173,8 +175,8 @@ def confirm_stage2(
             signals_passed.append(f"slide_count={pptx_slides}vs{video_slides}")
 
     # Signal 4: topic overlap
-    pptx_topics = set(t.lower() for t in (pptx_extraction.get("topics") or []))
-    video_topics = set(t.lower() for t in (video_extraction.get("topics") or []))
+    pptx_topics = set(t.lower() for t in normalize_string_list(pptx_extraction.get("topics") or []))
+    video_topics = set(t.lower() for t in normalize_string_list(video_extraction.get("topics") or []))
     if pptx_topics and video_topics:
         topic_union = pptx_topics | video_topics
         topic_inter = pptx_topics & video_topics

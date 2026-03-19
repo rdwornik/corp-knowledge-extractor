@@ -37,6 +37,7 @@ from src.inventory import FileType, SourceFile
 from src.utils import parse_llm_json
 
 from src.transcript import TranscriptResult
+from src.utils import normalize_string_list
 
 log = logging.getLogger(__name__)
 
@@ -354,10 +355,17 @@ def build_package(
         all_products.extend(r.products)
         all_types.add(r.source_file.type.value)
 
-    # Deduplicate preserving order
+    # Deduplicate preserving order (normalizes dicts from LLM lists first)
     def dedup(lst: list) -> list:
+        normalized = normalize_string_list(lst)
         seen = set()
-        return [x for x in lst if not (x in seen or seen.add(x))]
+        result = []
+        for x in normalized:
+            key = x.lower()
+            if key not in seen:
+                seen.add(key)
+                result.append(x)
+        return result
 
     # Prefer synthesis data for index if available
     exec_summary = synthesis_data.get("executive_summary") or (

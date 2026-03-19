@@ -5,6 +5,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from src.utils import normalize_string_list
+
 logger = logging.getLogger(__name__)
 
 
@@ -137,11 +139,12 @@ def _generate_session_id(pptx_path: Path, video_path: Path) -> str:
 
 
 def _dedupe_list(items: list) -> list:
-    """Deduplicate list preserving order, case-insensitive."""
+    """Deduplicate list preserving order, case-insensitive. Handles dict items."""
+    normalized = normalize_string_list(items)
     seen: set[str] = set()
     result = []
-    for item in items:
-        key = str(item).lower().strip()
+    for item in normalized:
+        key = item.lower().strip()
         if key not in seen:
             seen.add(key)
             result.append(item)

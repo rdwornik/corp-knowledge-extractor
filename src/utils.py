@@ -68,3 +68,29 @@ def parse_llm_json(text: str) -> dict:
 
     log.error("Cannot parse LLM JSON. Full response (%d chars):\n%s", len(text), text[:5000])
     raise ValueError("Failed to parse LLM JSON response")
+
+
+def normalize_string_list(items: list) -> list[str]:
+    """Ensure all items in a list are strings. LLMs sometimes return dicts.
+
+    Handles:
+    - str → pass through
+    - dict with "name" or "title" key → "name (role)" or "title"
+    - anything else → str(item)
+    """
+    result = []
+    for item in items:
+        if isinstance(item, str):
+            result.append(item)
+        elif isinstance(item, dict):
+            name = item.get("name", item.get("title", ""))
+            role = item.get("role", "")
+            if name and role:
+                result.append(f"{name} ({role})")
+            elif name:
+                result.append(str(name))
+            else:
+                result.append(str(item))
+        else:
+            result.append(str(item))
+    return result

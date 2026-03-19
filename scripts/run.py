@@ -375,6 +375,10 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
             log.warning("Skipping %s: %s", f.path.name, exc)
             failed.append(f.path.name)
             _print(f"    [FAIL] {exc}")
+        except Exception as exc:
+            log.error("Unexpected error extracting %s: %s: %s", f.path.name, type(exc).__name__, exc, exc_info=True)
+            failed.append(f.path.name)
+            _print(f"    [FAIL] Unexpected {type(exc).__name__}: {exc}")
 
     if not extracts:
         _print("[red]No files were successfully extracted.[/red]" if HAS_RICH
