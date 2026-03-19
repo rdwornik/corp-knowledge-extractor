@@ -4,9 +4,36 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock, ANY
 
+import fitz
 import pytest
 
-from src.slides.pdf_converter import convert_pptx_to_pdf
+from src.slides.pdf_converter import convert_pptx_to_pdf, _convert_via_com
+from src.extract import _render_pdf_to_slides
+
+
+class TestComScriptContent:
+    """Verify the inline COM script has required safety flags."""
+
+    def test_com_script_has_with_window_false(self, tmp_path):
+        """Inline script must open without window (PowerPoint rejects Visible=0)."""
+        from src.slides.pdf_converter import _convert_via_com
+        import inspect
+        source = inspect.getsource(_convert_via_com)
+        assert "WithWindow=False" in source
+
+    def test_com_script_has_display_alerts_0(self, tmp_path):
+        """Inline script must suppress dialogs."""
+        from src.slides.pdf_converter import _convert_via_com
+        import inspect
+        source = inspect.getsource(_convert_via_com)
+        assert "DisplayAlerts = 0" in source
+
+    def test_com_script_has_quit(self, tmp_path):
+        """Inline script must call ppt.Quit()."""
+        from src.slides.pdf_converter import _convert_via_com
+        import inspect
+        source = inspect.getsource(_convert_via_com)
+        assert "Quit()" in source
 
 
 class TestConverterCascade:
@@ -158,3 +185,53 @@ class TestPptxMultimodalRouting:
         # Should still produce a result via text-only path
         assert result is not None
         assert result.title == "Test"
+
+
+class TestRenderPdfToSlides:
+    """Test PDF → slide PNG rendering via PyMuPDF."""
+
+    def test_render_pdf_to_slides(self, tmp_path):
+        """Create a 1-page PDF, render to PNG, verify PNG exists."""
+        pdf_path = tmp_path / "test.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=1920, height=1080)
+        page.insert_text((100, 100), "Test slide content")
+        doc.save(str(pdf_path))
+        doc.close()
+
+        slides = _render_pdf_to_slides(pdf_path, tmp_path)
+
+        assert len(slides) == 1
+        assert slides[0].exists()
+        assert slides[0].name == "slide_001.png"
+        assert slides[0].stat().st_size > 0
+
+    def test_slides_dir_created(self, tmp_path):
+        """Verify source/slides/ directory is created."""
+        pdf_path = tmp_path / "test.pdf"
+        doc = fitz.open()
+        doc.new_page()
+        doc.save(str(pdf_path))
+        doc.close()
+
+        _render_pdf_to_slides(pdf_path, tmp_path)
+
+        slides_dir = tmp_path / "slides"
+        assert slides_dir.is_dir()
+
+    def test_render_multipage_pdf(self, tmp_path):
+        """Multi-page PDF produces one PNG per page."""
+        pdf_path = tmp_path / "multi.pdf"
+        doc = fitz.open()
+        for i in range(3):
+            page = doc.new_page()
+            page.insert_text((100, 100), f"Page {i + 1}")
+        doc.save(str(pdf_path))
+        doc.close()
+
+        slides = _render_pdf_to_slides(pdf_path, tmp_path)
+
+        assert len(slides) == 3
+        for i, s in enumerate(slides, 1):
+            assert s.name == f"slide_{i:03d}.png"
+            assert s.exists()

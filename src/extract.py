@@ -90,6 +90,8 @@ class ExtractionResult:
     freshness: dict = field(default_factory=dict)
     # Gemini File API URI for reuse (e.g., transcript generation)
     gemini_file_uri: str | None = None
+    # Temp slide PNGs rendered from PDF (moved to output by run.py)
+    slide_image_paths: list[Path] = field(default_factory=list)
 
 
 class ExtractionError(Exception):
@@ -602,6 +604,25 @@ def extract_knowledge(
     return result
 
 
+def _render_pdf_to_slides(pdf_path: Path, temp_dir: Path) -> list[Path]:
+    """Render PDF pages as slide PNGs using PyMuPDF."""
+    import fitz
+
+    slides_dir = temp_dir / "slides"
+    slides_dir.mkdir(parents=True, exist_ok=True)
+
+    doc = fitz.open(str(pdf_path))
+    paths = []
+    for i, page in enumerate(doc, 1):
+        mat = fitz.Matrix(2, 2)  # 2x zoom for quality
+        pix = page.get_pixmap(matrix=mat)
+        png_path = slides_dir / f"slide_{i:03d}.png"
+        pix.save(str(png_path))
+        paths.append(png_path)
+    doc.close()
+    return paths
+
+
 def _try_pptx_pdf_multimodal(
     file: SourceFile,
     config: dict,
@@ -706,10 +727,17 @@ def _try_pptx_pdf_multimodal(
     result.facts = _enrich_facts(data, file, result.source_date, text_result)
     result.freshness = compute_freshness_fields(file.path)
 
-    # Cleanup temp PDF
+    # Render slide PNGs from PDF before cleanup
+    try:
+        slide_paths = _render_pdf_to_slides(pdf_path, pdf_dir)
+        result.slide_image_paths = slide_paths
+        log.info("Rendered %d slide PNGs from PDF for %s", len(slide_paths), file.path.name)
+    except Exception as exc:
+        log.warning("Failed to render slide PNGs from PDF: %s", exc)
+
+    # Cleanup temp PDF (keep slide PNGs for run.py to copy)
     try:
         pdf_path.unlink(missing_ok=True)
-        pdf_dir.rmdir()
     except OSError:
         pass
 

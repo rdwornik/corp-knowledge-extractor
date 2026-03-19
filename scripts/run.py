@@ -419,6 +419,23 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
             # PPTX multimodal: copy rendered slide PNGs to source/slides/
             _keep_pptx_slides(rendered_pptx_slides[stem], output_pptx_slides_dir)
             _print(f"  {stem}: kept {len(rendered_pptx_slides[stem])} PPTX slide(s)")
+        elif result.slide_image_paths:
+            # PPTX→PDF multimodal: copy PDF-rendered slide PNGs to source/slides/
+            output_pptx_slides_dir.mkdir(parents=True, exist_ok=True)
+            for png in result.slide_image_paths:
+                if png.exists():
+                    shutil.copy2(png, output_pptx_slides_dir / png.name)
+            _print(f"  {stem}: kept {len(result.slide_image_paths)} PDF-rendered slide(s)")
+            # Cleanup temp slide PNGs and parent dir
+            for png in result.slide_image_paths:
+                if png.exists():
+                    png.unlink()
+            try:
+                if result.slide_image_paths:
+                    result.slide_image_paths[0].parent.rmdir()
+                    result.slide_image_paths[0].parent.parent.rmdir()
+            except OSError:
+                pass
         elif stem in sampled and not result.slides:
             # No slides identified — clean up temp frames
             if config.get("frame_sampling", {}).get("cleanup_non_slides", True):

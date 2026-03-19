@@ -14,7 +14,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-COM_TIMEOUT = 30
+COM_TIMEOUT = 120
 LIBREOFFICE_TIMEOUT = 120
 
 
@@ -32,6 +32,8 @@ def convert_pptx_to_pdf(pptx_path: Path, output_dir: Path) -> Path | None:
         if result and result.exists():
             logger.info("Converted %s to PDF via PowerPoint COM", pptx_path.name)
             return result
+    except subprocess.CalledProcessError as exc:
+        logger.warning("COM PDF export failed: %s | stderr: %s", exc, exc.stderr)
     except Exception as exc:
         logger.info("PowerPoint COM conversion failed: %s", exc)
 
@@ -52,13 +54,19 @@ def _convert_via_com(pptx_path: Path, pdf_path: Path) -> Path | None:
     """Convert via PowerPoint COM automation in a subprocess (30s timeout)."""
     import sys
 
+    pptx_abs = pptx_path.resolve()
+    pdf_abs = pdf_path.resolve()
+    # WithWindow=False suppresses the UI; Visible=0 is rejected by PowerPoint COM
     script = (
-        f"import comtypes.client; "
-        f"ppt = comtypes.client.CreateObject('PowerPoint.Application'); "
-        f"ppt.Visible = 1; "
-        f"prs = ppt.Presentations.Open(r'{pptx_path.resolve()}', ReadOnly=True, Untitled=False, WithWindow=False); "
-        f"prs.SaveAs(r'{pdf_path.resolve()}', 32); "  # 32 = ppSaveAsPDF
-        f"prs.Close()"
+        f"import comtypes.client\n"
+        f"ppt = comtypes.client.CreateObject('PowerPoint.Application')\n"
+        f"ppt.DisplayAlerts = 0\n"
+        f"try:\n"
+        f"    prs = ppt.Presentations.Open(r'{pptx_abs}', ReadOnly=True, Untitled=False, WithWindow=False)\n"
+        f"    prs.SaveAs(r'{pdf_abs}', 32)\n"  # 32 = ppSaveAsPDF
+        f"    prs.Close()\n"
+        f"finally:\n"
+        f"    ppt.Quit()"
     )
 
     subprocess.run(
