@@ -89,3 +89,13 @@ extracted_at: "{{ freshness.extracted_at }}"
 
 {{ transcript_excerpt }}
 {% endif %}
+
+{% if flagged_facts %}
+## Flagged Facts
+
+{% for ff in flagged_facts %}
+> **{{ ff.verification_status | upper }}:** {{ ff.fact }}{% if ff.anomalies %}
+> {{ ff.anomalies | join('; ') }}{% endif %}
+
+{% endfor %}
+{% endif %}

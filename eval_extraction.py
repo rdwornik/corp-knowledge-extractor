@@ -105,6 +105,10 @@ def evaluate_package(package_dir: Path) -> dict:
     for md in package_dir.rglob("*.md"):
         if md.name in ("index.md", "synthesis.md"):
             continue
+        if md.name.endswith("_transcript.md"):
+            continue
+        if md.name.startswith("session_"):
+            continue
         md_files.append(md)
 
     if not md_files:

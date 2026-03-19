@@ -282,6 +282,12 @@ def build_package(
             slide_summaries=result.raw_json.get("slide_summaries") or [],
             # Freshness tracking
             freshness=result.freshness,
+            # Fact validation — only show flagged/mismatched facts
+            flagged_facts=[
+                f for f in result.facts
+                if f.get("verification_status") in ("flagged_mismatch", "unverified")
+                and f.get("anomalies")
+            ],
         )
         out_path = extract_dir / f"{stem}.md"
         out_path.write_text(content, encoding="utf-8")

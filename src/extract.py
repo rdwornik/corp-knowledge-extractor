@@ -255,13 +255,16 @@ def _enrich_facts(
     source_date: str | None,
     text_result: TextExtractionResult | None,
 ) -> list[dict]:
-    """Build enriched facts list with source_date, locator, and polarity."""
+    """Build enriched facts list with source_date, locator, polarity, and validation."""
     from src.polarity import detect_polarity
+    from src.fact_validation import validate_fact_against_source
 
     file_ext = source_file.path.suffix.lower()
     max_pages = 0
+    source_text = ""
     if text_result:
         max_pages = text_result.page_count or text_result.slide_count or 0
+        source_text = text_result.text or ""
 
     # LLM may return facts as list[dict] with page refs, or key_points as list[str]
     raw_facts = data.get("facts") or []
@@ -274,26 +277,34 @@ def _enrich_facts(
         for f in raw_facts:
             fact_text = f.get("fact") or f.get("text") or ""
             page_ref = f.get("page") or f.get("slide") or f.get("section")
-            enriched.append(
-                {
-                    "fact": fact_text,
-                    "source_date": source_date,
-                    "locator": _build_locator(page_ref, file_ext, max_pages),
-                    "polarity": detect_polarity(fact_text),
-                }
-            )
+            validation = validate_fact_against_source(fact_text, source_text) if source_text else None
+            entry = {
+                "fact": fact_text,
+                "source_date": source_date,
+                "locator": _build_locator(page_ref, file_ext, max_pages),
+                "polarity": detect_polarity(fact_text),
+            }
+            if validation:
+                entry["verification_status"] = validation["status"]
+                if validation["anomalies"]:
+                    entry["anomalies"] = validation["anomalies"]
+            enriched.append(entry)
     else:
         # Fallback: enrich key_points (no locator info available)
         for kp in key_points:
             text = kp if isinstance(kp, str) else str(kp)
-            enriched.append(
-                {
-                    "fact": text,
-                    "source_date": source_date,
-                    "locator": None,
-                    "polarity": detect_polarity(text),
-                }
-            )
+            validation = validate_fact_against_source(text, source_text) if source_text else None
+            entry = {
+                "fact": text,
+                "source_date": source_date,
+                "locator": None,
+                "polarity": detect_polarity(text),
+            }
+            if validation:
+                entry["verification_status"] = validation["status"]
+                if validation["anomalies"]:
+                    entry["anomalies"] = validation["anomalies"]
+            enriched.append(entry)
 
     return enriched
 
