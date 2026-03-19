@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from src.fact_validation import extract_numbers_from_text, _numbers_match
 from src.utils import normalize_string_list
 
 logger = logging.getLogger(__name__)
@@ -43,14 +44,10 @@ def merge_correlated(
         (pptx_extraction.get("people") or []) + (video_extraction.get("people") or [])
     )
 
-    # Key facts from PPTX (structured), tag with source modality
-    key_facts = []
-    for fact in pptx_extraction.get("key_facts") or []:
-        if isinstance(fact, str):
-            key_facts.append({"fact": fact, "source_modality": "pptx"})
-        elif isinstance(fact, dict):
-            fact["source_modality"] = "pptx"
-            key_facts.append(fact)
+    # Merge key facts from both sources with conservative dedup
+    pptx_facts = _tag_facts(pptx_extraction.get("key_facts") or [], "pptx")
+    mp4_facts = _tag_facts(video_extraction.get("key_facts") or [], "mp4")
+    key_facts = deduplicate_facts(pptx_facts, mp4_facts)
 
     # Overlay from PPTX
     overlay = None
@@ -130,6 +127,128 @@ def merge_correlated(
         "markdown": markdown,
         "session_id": session_id,
     }
+
+
+def _tag_facts(raw_facts: list, modality: str) -> list[dict]:
+    """Convert raw facts (str or dict) to tagged dicts."""
+    tagged = []
+    for fact in raw_facts:
+        if isinstance(fact, str):
+            tagged.append({"fact": fact, "source_modality": modality})
+        elif isinstance(fact, dict):
+            entry = dict(fact)
+            entry["source_modality"] = modality
+            tagged.append(entry)
+    return tagged
+
+
+def _is_year(n: float) -> bool:
+    """Check if a number looks like a calendar year (2000-2099)."""
+    return n == int(n) and 2000 <= n <= 2099
+
+
+def _meaningful_numbers(nums: set[float]) -> set[float]:
+    """Filter out year-like numbers — they don't identify a fact's claim."""
+    return {n for n in nums if not _is_year(n)}
+
+
+def _fact_words(text: str) -> set[str]:
+    """Extract meaningful words for overlap comparison."""
+    stop_words = {"the", "a", "an", "is", "are", "was", "were", "in", "on", "at",
+                  "to", "for", "of", "with", "and", "or", "by", "from", "has", "had"}
+    return {w.lower().strip(".,;:!?()") for w in text.split()
+            if w.lower() not in stop_words and len(w) > 2 and not w.replace(",", "").isdigit()}
+
+
+def _facts_match(a: dict, b: dict) -> bool:
+    """Check if two facts refer to the same claim via shared numbers and text overlap.
+
+    Match criteria: at least one non-year number in common (±1% tolerance)
+    AND meaningful word overlap (>20% shared words).
+    """
+    a_text = a.get("fact", "")
+    b_text = b.get("fact", "")
+
+    a_nums = _meaningful_numbers(extract_numbers_from_text(a_text))
+    b_nums = _meaningful_numbers(extract_numbers_from_text(b_text))
+
+    # If both have meaningful numbers, require at least one match
+    if a_nums and b_nums:
+        has_number_match = any(
+            _numbers_match(an, bn)
+            for an in a_nums
+            for bn in b_nums
+        )
+        if not has_number_match:
+            return False
+        # Also require some text overlap (entity similarity)
+        a_words = _fact_words(a_text)
+        b_words = _fact_words(b_text)
+        if not a_words or not b_words:
+            return has_number_match
+        overlap = len(a_words & b_words) / min(len(a_words), len(b_words))
+        return overlap > 0.2
+
+    return False
+
+
+def _facts_conflict(a: dict, b: dict) -> bool:
+    """Check if two facts mention the same entity but different numbers."""
+    a_text = a.get("fact", "")
+    b_text = b.get("fact", "")
+
+    a_nums = _meaningful_numbers(extract_numbers_from_text(a_text))
+    b_nums = _meaningful_numbers(extract_numbers_from_text(b_text))
+
+    if not a_nums or not b_nums:
+        return False
+
+    # Need shared words (entity overlap) but NO shared numbers
+    a_words = _fact_words(a_text)
+    b_words = _fact_words(b_text)
+
+    if not a_words or not b_words:
+        return False
+    overlap = len(a_words & b_words) / min(len(a_words), len(b_words))
+    if overlap < 0.3:
+        return False
+
+    # Has entity overlap but no number match → conflict
+    has_number_match = any(
+        _numbers_match(an, bn) for an in a_nums for bn in b_nums
+    )
+    return not has_number_match
+
+
+def deduplicate_facts(pptx_facts: list[dict], mp4_facts: list[dict]) -> list[dict]:
+    """Merge facts from PPTX and MP4 with conservative deduplication.
+
+    - Matching facts: keep PPTX version (canonical), mark modality="both"
+    - Conflicting facts: keep both, add conflict_detected=True
+    - Supplementary MP4 facts: add with modality="mp4"
+    """
+    result = list(pptx_facts)
+    matched_mp4: set[int] = set()
+
+    for mi, mp4_fact in enumerate(mp4_facts):
+        for pi, pptx_fact in enumerate(result):
+            if _facts_match(pptx_fact, mp4_fact):
+                result[pi]["source_modality"] = "both"
+                matched_mp4.add(mi)
+                break
+            elif _facts_conflict(pptx_fact, mp4_fact):
+                mp4_fact["conflict_detected"] = True
+                result[pi]["conflict_detected"] = True
+                result.append(mp4_fact)
+                matched_mp4.add(mi)
+                break
+
+    # Add supplementary MP4 facts not matched
+    for mi, mp4_fact in enumerate(mp4_facts):
+        if mi not in matched_mp4:
+            result.append(mp4_fact)
+
+    return result
 
 
 def _generate_session_id(pptx_path: Path, video_path: Path) -> str:

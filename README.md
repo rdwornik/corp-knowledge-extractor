@@ -1,151 +1,124 @@
-# Corp Knowledge Extractor (CKE)
+# Corporate Knowledge Extractor (CKE) v0.3.0
 
-Extraction engine for the **corp-by-os** ecosystem. Processes corporate files (PDF, PPTX, DOCX, XLSX, CSV, video) into structured Obsidian notes with validated YAML frontmatter and machine-readable JSON. Uses tiered Gemini AI to minimize cost while maximizing extraction quality.
+AI-powered extraction engine for corporate presentations, videos, and documents. Converts PPTX, MP4, PDF, DOCX into structured knowledge notes for Obsidian.
 
-## Features
+## What it does
 
-- **Tiered extraction** — routes files to the cheapest effective tier (free local, ~$0.001 text AI, ~$0.03 multimodal)
-- **Batch processing** — manifest-driven batch with resume support and Gemini Batch API (50% cheaper)
-- **Schema v2 output** — validated frontmatter via corp-os-meta, Obsidian Dataview compatible
-- **Multi-format** — PDF, PPTX, DOCX, XLSX, CSV, MP4, MKV, AVI, MOV, WAV
-- **Insight-first** — extracts what speakers SAID, not just what slides SHOW
-- **Defense-in-depth taxonomy** — prompt injection + post-process normalization + unknown logging
-- **Local scanning** — `cke scan` for metadata-only extraction without API calls
-- **Multi-provider AI** — Gemini (primary), Anthropic (experimental)
-
-## Installation
-
-```bash
-# Python 3.11+ required
-pip install -e ../corp-os-meta    # shared schema + taxonomy
-pip install -e .                  # install CKE + all deps
-
-# Create .env
-echo "GEMINI_API_KEY=your_key_here" > .env
-
-# Optional: FFmpeg for video compression
-# Windows: https://www.gyan.dev/ffmpeg/builds/
-```
-
-## Usage
-
-```bash
-# Process a single file or folder
-cke process report.pdf
-cke process ./documents/
-
-# Cost estimate without processing
-cke process ./documents/ --dry-run-tiers
-
-# Batch from manifest (used by corp-project-extractor)
-cke process-manifest manifest.json --resume --max-rpm 100
-
-# Batch API (50% cheaper, async)
-cke process-manifest manifest.json --batch
-
-# Local metadata scan (no API calls, free)
-cke scan ./documents/ -o metadata.json
-
-# Force a specific tier or model
-cke process report.pdf --tier 2
-cke process report.pdf --model gemini-2.5-flash
-
-# Custom extraction prompt
-cke process report.pdf --prompt-file config/prompts/product_architecture.md
-
-# Re-run extraction on existing package
-cke reextract output/my_package/
-
-# Show package info
-cke info output/my_package/
-```
+- **Structured knowledge extraction** — key_facts, entities, overlays from any corporate document
+- **Per-slide visual analysis** for presentations (COM→PDF→Gemini multimodal)
+- **Per-slide speaker commentary** from video recordings (FFmpeg scene detection + Gemini)
+- **Full verbatim transcripts** from video with timestamps
+- **Session merge** — correlates PPTX + MP4 from same session into unified training_session note
+- **Fact validation** — cross-references extracted numbers against source text, flags hallucinations
+- **Deep extraction** with doc-type-specific overlays (training, architecture, security, commercial, meeting)
 
 ## Architecture
 
-Part of the corp-by-os ecosystem:
+| Tier | Method | Cost | When |
+|------|--------|------|------|
+| 1 — LOCAL | Local text extraction | FREE | Small text files (<5000 chars) |
+| 2 — TEXT_AI | Text → Gemini deep extraction | ~$0.001/file | PPTX, PDF, DOCX, XLSX |
+| 3 — MULTIMODAL | Full upload to Gemini | ~$0.03/file | Video, audio, scanned PDFs |
 
-```
-corp-os-meta              — shared schema + taxonomy (imported as library)
-corp-knowledge-extractor  — extraction engine (THIS)
-corp-project-extractor    — project orchestrator (calls CKE via process-manifest)
-corp-by-os                — root orchestrator, sole vault writer
-```
-
-CKE is a pure extraction engine. No routing, no vault writes, no orchestration.
+- **Dual-signal for PPTX:** Gemini multimodal (visual) + text grounding (structured facts)
+- **Provider abstraction:** Anthropic (Haiku/Sonnet) + Google (Gemini), automatic routing
+- **Dynamic token budgets** scaled by slide count and extraction depth
+- **PPTX rendering:** PowerPoint COM → PDF → PyMuPDF → per-slide PNGs
+- **Video frames:** FFmpeg scene detection → key frame sampling → Gemini multimodal
 
 ### Pipeline
 
 ```
 Input (file, folder, or JSON manifest)
-  -> scan_input()           -> classify files            (src/inventory.py)
-  -> route_tier()           -> pick cheapest tier         (src/tier_router.py)
-  -> compress_video()       -> compress if needed         (src/compress.py, Tier 3)
-  -> sample_frames()        -> extract key frames         (src/frames/sampler.py, Tier 3)
-  -> extract_*()            -> Gemini or local            (src/extract.py, src/text_extract.py)
-  -> post_process()         -> normalize via corp-os-meta (src/post_process.py)
-  -> correlate_files()      -> group related files        (src/correlate.py)
-  -> build_package()        -> Obsidian notes + JSON      (src/synthesize.py)
+  → scan_input()           → classify files            (src/inventory.py)
+  → route_tier()           → pick cheapest tier         (src/tier_router.py)
+  → compress_video()       → compress if needed         (src/compress.py)
+  → scene_detect()         → FFmpeg scene frames        (src/frames/scene_detect.py)
+  → extract_*()            → Gemini or local            (src/extract.py)
+  → fact_validation()      → cross-ref numbers          (src/fact_validation.py)
+  → post_process()         → normalize via corp-os-meta (src/post_process.py)
+  → correlate_sessions()   → match PPTX+MP4 pairs      (src/correlate_sessions.py)
+  → merge_session()        → unified session note       (src/merge_session.py)
+  → build_package()        → Obsidian notes + JSON      (src/synthesize.py)
 ```
 
-### Tiered Extraction
+## Key metrics (Cognitive Friday S4E1 test set)
 
-| Tier | Method | Cost | When |
-|------|--------|------|------|
-| 1 — LOCAL | Local text extraction | FREE | Small text files (<5000 chars) |
-| 2 — TEXT_AI | Text sent to Gemini | ~$0.001/file | PDF, PPTX, DOCX, XLSX |
-| 3 — MULTIMODAL | Full upload to Gemini | ~$0.03/file | Video, audio, scanned PDFs |
+| Metric | Score |
+|--------|-------|
+| Extraction quality (overall) | 24/100 → 92/100 |
+| MP4 | 95/100 — 15 key_facts, 20 frames, overlay 6/6, transcript 55k chars |
+| PPTX | 85/100 — 18 key_facts, 55 slide PNGs, 29k chars, overlay 6/6 |
 
-Batch API (`--batch` flag): 50% discount on Tier 2, async processing.
-PPTX, XLSX, DOCX are always capped at Tier 2 — Gemini rejects their MIME types.
-
-## Output
-
-Each extraction produces a package directory:
-
-```
-output/<package-name>/
-  extract/
-    <file>.md              — Obsidian note with YAML frontmatter
-    <file>.json            — machine-readable extraction data
-    _meta.yaml             — extraction metadata
-  source/
-    frames/                — slide PNGs (video only)
-  index.md                 — Dataview-compatible index
-```
-
-## Configuration
-
-| File | Purpose |
-|------|---------|
-| `config/settings.yaml` | Model, prompts, file types, compression settings |
-| `config/taxonomy_review.yaml` | Pending unknown terms for review |
-| `config/prompts/` | Custom extraction prompts |
-| `.env` | `GEMINI_API_KEY` |
-
-Default model: `gemini-3-flash-preview` (since 2026-03-12). Override per-run with `--model`.
-
-## Testing
+## CLI
 
 ```bash
-python -m pytest              # 324 pass, 4 skip
-python -m pytest -v           # verbose
-python -m ruff check src/     # lint
+cke process <file_or_folder>             # extract knowledge
+cke process <folder> --no-compress       # skip video compression
+cke process <file> --model <model>       # override LLM model
+cke process <file> --tier 3              # force multimodal tier
+cke process-manifest manifest.json       # batch from manifest
+cke process-manifest manifest.json --batch  # Gemini Batch API (50% cheaper)
+cke scan <folder> -o metadata.json       # local metadata scan (no API)
+cke reextract output/<package>/          # re-run extraction
+cke info output/<package>/               # show package info
 ```
 
-## Dependencies
+## Output structure
 
-**Python (via pyproject.toml):**
-corp-os-meta, google-genai, pdfplumber, python-pptx, python-docx, openpyxl,
-opencv-python, click, rich, Jinja2, PyYAML, python-dotenv, pydub, numpy, pillow, packaging, requests
+```
+output/{package_name}/
+├── extract/
+│   ├── {filename}.md                # extraction note (frontmatter + content)
+│   ├── {filename}.json              # structured data
+│   ├── {filename}_transcript.md     # video transcript (if MP4)
+│   └── session_{id}.md              # merged session note (if PPTX+MP4 pair)
+├── source/
+│   ├── docs/                        # original source files
+│   ├── slides/                      # rendered slide PNGs (PPTX)
+│   └── frames/                      # video frames (MP4)
+├── index.md                         # package index
+├── synthesis.md                     # cross-file synthesis
+└── _meta.yaml                       # extraction metadata
+```
 
-**System (optional):**
-FFmpeg/ffprobe (video compression and metadata)
+## Requirements
 
-## Related repos
+- Python 3.12+
+- FFmpeg (video compression + scene detection)
+- PowerPoint (PPTX→PDF via COM, Windows) or LibreOffice (fallback)
+- API keys: `GEMINI_API_KEY` (required), `ANTHROPIC_API_KEY` (optional)
 
-- **corp-by-os** — root orchestrator, sole vault writer
-- **corp-os-meta** — shared schema + taxonomy
-- **corp-project-extractor** — project orchestrator, calls CKE via process-manifest
+## Installation
+
+```bash
+pip install -e ../corp-os-meta       # shared schema + taxonomy
+pip install -e .                     # install CKE + deps
+echo "GEMINI_API_KEY=your_key" > .env
+```
+
+## Tests
+
+```bash
+python -m pytest                     # 449 pass, 4 skip
+python -m ruff check src/            # lint
+python eval_extraction.py output/    # quality evaluation
+```
+
+## Tech stack
+
+Python, Click, Rich, PyMuPDF, OpenCV, FFmpeg, comtypes, python-pptx, pdfplumber, google-genai, Jinja2, PyYAML
+
+## Part of corp-by-os ecosystem
+
+```
+corp-os-meta              — shared schema + taxonomy
+corp-knowledge-extractor  — extraction engine (THIS)
+corp-project-extractor    — project orchestrator, calls CKE via process-manifest
+corp-by-os                — root orchestrator, sole vault writer
+```
+
+CKE is a pure extraction engine. No routing, no vault writes, no orchestration.
 
 ## License
 

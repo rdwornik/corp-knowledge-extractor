@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from src.merge_session import merge_correlated, _dedupe_list
+from src.merge_session import merge_correlated, _dedupe_list, deduplicate_facts
 
 
 class TestMergeCorrelated:
@@ -145,3 +145,63 @@ class TestDedupeList:
 
     def test_empty(self):
         assert _dedupe_list([]) == []
+
+
+class TestDeduplicateFacts:
+    """Conservative fact deduplication between PPTX and MP4 sources."""
+
+    def test_merge_dedup_exact_match(self):
+        """Same fact in both → kept once, modality='both'."""
+        pptx = [{"fact": "1706 customers onboarded", "source_modality": "pptx"}]
+        mp4 = [{"fact": "1706 customers onboarded across regions", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        both_facts = [f for f in result if f["source_modality"] == "both"]
+        assert len(both_facts) == 1
+        # PPTX wording kept
+        assert both_facts[0]["fact"] == "1706 customers onboarded"
+
+    def test_merge_dedup_supplementary(self):
+        """MP4 fact not in PPTX → added with modality='mp4'."""
+        pptx = [{"fact": "1706 customers onboarded", "source_modality": "pptx"}]
+        mp4 = [{"fact": "Speaker mentioned 42 integrations available", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        assert len(result) == 2
+        mp4_facts = [f for f in result if f["source_modality"] == "mp4"]
+        assert len(mp4_facts) == 1
+        assert "42 integrations" in mp4_facts[0]["fact"]
+
+    def test_merge_dedup_conflict(self):
+        """Same entity different number → both kept, conflict flagged."""
+        pptx = [{"fact": "Revenue was $2M in 2025", "source_modality": "pptx"}]
+        mp4 = [{"fact": "Revenue reached $3M in 2025", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        conflicted = [f for f in result if f.get("conflict_detected")]
+        assert len(conflicted) >= 1
+
+    def test_merge_dedup_number_matching(self):
+        """'1,706 customers' vs '1706 total customers' → matched as same."""
+        pptx = [{"fact": "Serving 1,706 customers globally", "source_modality": "pptx"}]
+        mp4 = [{"fact": "1706 total customers served", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        both_facts = [f for f in result if f["source_modality"] == "both"]
+        assert len(both_facts) == 1
+
+    def test_merge_preserves_pptx_canonical(self):
+        """When matched, PPTX wording is kept (canonical from deck)."""
+        pptx = [{"fact": "Platform handles 1706 transactions per second", "source_modality": "pptx"}]
+        mp4 = [{"fact": "About 1706 transactions every second on the platform", "source_modality": "mp4"}]
+
+        result = deduplicate_facts(pptx, mp4)
+
+        both_facts = [f for f in result if f["source_modality"] == "both"]
+        assert len(both_facts) == 1
+        # PPTX version preserved
+        assert both_facts[0]["fact"] == "Platform handles 1706 transactions per second"

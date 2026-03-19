@@ -615,6 +615,84 @@ def extract_knowledge(
     return result
 
 
+def _haiku_enrichment(
+    existing_facts: list[str],
+    source_text: str,
+    source_file: SourceFile,
+    source_date: str | None,
+    text_result: TextExtractionResult | None,
+) -> list[dict]:
+    """Call Haiku to extract additional facts not captured by Gemini.
+
+    Returns enriched fact dicts tagged with source_extractor="haiku_enrichment".
+    Returns empty list on failure (non-blocking).
+    """
+    if not source_text or not existing_facts:
+        return []
+
+    try:
+        from src.providers.router import get_provider
+        from src.providers.base import ExtractionRequest
+        from src.fact_validation import validate_fact_against_source
+        from src.polarity import detect_polarity
+        import json
+
+        model = "claude-haiku-4-5-20251001"
+        provider = get_provider(model)
+
+        existing_json = json.dumps(existing_facts, indent=2)
+        # Cap source text to avoid excessive input
+        capped_text = source_text[:40000]
+
+        request = ExtractionRequest(
+            system_prompt=(
+                "You are a fact extraction specialist. Given existing extracted facts "
+                "and raw source text, identify ADDITIONAL specific factual claims not "
+                "already captured."
+            ),
+            user_prompt=(
+                f"EXISTING FACTS:\n{existing_json}\n\n"
+                f"SOURCE TEXT:\n{capped_text}\n\n"
+                "Extract additional key_facts not already in the list above. "
+                "Each fact must contain at least one specific number, date, metric, "
+                "company name, or product detail. Output JSON array of strings only. "
+                "If no additional facts found, return empty array []."
+            ),
+            model=model,
+            max_tokens=4096,
+        )
+
+        response = provider.extract(request)
+        new_facts_raw = json.loads(response.text)
+
+        if not isinstance(new_facts_raw, list):
+            return []
+
+        enriched = []
+        for fact_text in new_facts_raw:
+            if not isinstance(fact_text, str) or not fact_text.strip():
+                continue
+            entry = {
+                "fact": fact_text.strip(),
+                "source_date": source_date,
+                "locator": None,
+                "polarity": detect_polarity(fact_text),
+                "source_extractor": "haiku_enrichment",
+            }
+            if source_text:
+                validation = validate_fact_against_source(fact_text, source_text)
+                entry["verification_status"] = validation["status"]
+                if validation["anomalies"]:
+                    entry["anomalies"] = validation["anomalies"]
+            enriched.append(entry)
+
+        return enriched
+
+    except Exception as exc:
+        log.warning("Haiku enrichment failed for %s: %s", source_file.path.name, exc)
+        return []
+
+
 def _render_pdf_to_slides(pdf_path: Path, temp_dir: Path) -> list[Path]:
     """Render PDF pages as slide PNGs using PyMuPDF."""
     import fitz
@@ -737,6 +815,21 @@ def _try_pptx_pdf_multimodal(
     result.source_date = extract_source_date(file.path)
     result.facts = _enrich_facts(data, file, result.source_date, text_result)
     result.freshness = compute_freshness_fields(file.path)
+
+    # Haiku enrichment pass: extract additional facts from raw text
+    enrichment_facts = _haiku_enrichment(
+        existing_facts=[f.get("fact", "") for f in result.facts],
+        source_text=text_result.text or "",
+        source_file=file,
+        source_date=result.source_date,
+        text_result=text_result,
+    )
+    if enrichment_facts:
+        result.facts.extend(enrichment_facts)
+        # Also update raw_json key_facts for frontmatter
+        existing_kf = result.raw_json.get("key_facts") or []
+        result.raw_json["key_facts"] = existing_kf + [f["fact"] for f in enrichment_facts]
+        log.info("Haiku enrichment added %d facts for %s", len(enrichment_facts), file.path.name)
 
     # Render slide PNGs from PDF before cleanup
     try:
