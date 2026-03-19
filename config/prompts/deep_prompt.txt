@@ -45,6 +45,11 @@ Output ONLY valid JSON with this structure:
 IMPORTANT: Do NOT redact, censor, or replace any company names, product names, or brand names found in the source document. Output them exactly as they appear in the source text. For example, write "Blue Yonder" not "[REDACTED]".
 IMPORTANT: Use company and product names exactly as they appear. Do not duplicate or modify names. The company is 'Blue Yonder' not 'Blue Blue Yonder'.
 
+DETAIL REQUIREMENTS:
+- For each slide summary, write at least 50 words describing content.
+- For presentations with 20+ slides, produce at least 15 key_facts.
+- Exhaust every observation from the text. Prefer thoroughness over brevity.
+
 RULES:
 - Extract SPECIFIC facts: numbers, percentages, names, dates, thresholds, versions. Not vague statements.
 - key_facts should contain 10-30 specific, citable facts from the document. More for longer documents.

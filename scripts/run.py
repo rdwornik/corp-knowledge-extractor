@@ -29,7 +29,8 @@ from config.config_loader import load_config
 from src.inventory import scan_input, FileType
 from src.extract import extract_knowledge, extract_from_text, extract_local, extract_pptx_multimodal, ExtractionError
 from src.correlate import correlate_files
-from src.synthesize import build_package
+from src.synthesize import build_package, write_transcript_note
+from src.transcript import generate_transcript, TranscriptResult
 from src.reextract import reextract_package
 from src.frames.sampler import sample_frames, SampledFrame
 from src.frames.scene_detect import scene_detect
@@ -384,6 +385,25 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
         _print(f"\n[yellow]Warning: {len(failed)} file(s) failed.[/yellow]" if HAS_RICH
                else f"\nWarning: {len(failed)} file(s) failed.")
 
+    # --- 4b. Generate transcripts for video files ---
+    transcripts: dict[str, TranscriptResult] = {}
+    for f in files:
+        if f.type == FileType.VIDEO and f.name in extracts:
+            result = extracts[f.name]
+            if result.gemini_file_uri:
+                _print(f"  Generating transcript for {f.path.name}...")
+                try:
+                    tr = generate_transcript(f.path, result.gemini_file_uri, config)
+                    tr.duration_min = result.duration_min or 0
+                    transcripts[f.name] = tr
+                    if tr.status == "complete":
+                        _print(f"    [OK] {tr.word_count} words")
+                    else:
+                        _print(f"    [WARN] Transcript generation failed")
+                except Exception as exc:
+                    log.warning("Transcript generation failed for %s: %s", f.path.name, exc)
+                    _print(f"    [WARN] Transcript error: {exc}")
+
     # --- 5. Keep only AI-identified slide frames, clean up temp ---
     _print("\nSelecting unique slide frames...")
     output_pptx_slides_dir = output_p / package_name / "source" / "slides"
@@ -460,6 +480,15 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
                 "freshness": result.freshness,
             }
         extract_json_path.write_text(json.dumps(extract_data, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+
+    # --- 8b. Write transcript notes ---
+    for stem, tr in transcripts.items():
+        if stem in extracts:
+            result = extracts[stem]
+            extraction_note_filename = f"{stem}.md"
+            written = write_transcript_note(tr, result.title, extraction_note_filename, extract_dir)
+            if written:
+                _print(f"  Transcript: {written.name}")
 
     # --- 9. Session merge: detect + merge correlated PPTX+MP4 pairs ---
     if input_p.is_dir() and len(files) > 1:

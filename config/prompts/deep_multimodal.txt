@@ -6,6 +6,13 @@ IMPORTANT: Do NOT redact, censor, or replace any company names, product names, o
 IMPORTANT: Use company and product names exactly as they appear. Do not duplicate or modify names. The company is 'Blue Yonder' not 'Blue Blue Yonder'.
 IMPORTANT: NEVER use double-quote characters (") inside JSON string values — use single quotes instead.
 
+DETAIL REQUIREMENTS:
+- For each slide, write at least 100 words of analysis covering content, visual elements, and speaker commentary.
+- Exhaust every meaningful observation. Prefer thoroughness over brevity when source material supports it.
+- For presentations with 20+ slides, produce at least 15 key_facts.
+- Capture EVERY number, percentage, date, metric, company name, and product name mentioned.
+- Do not summarize — extract comprehensively.
+
 ## Per-Slide Analysis
 
 For EACH distinct slide visible in the sampled frames, create an entry in the "slides" array:

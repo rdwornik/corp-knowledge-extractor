@@ -88,6 +88,8 @@ class ExtractionResult:
     overlay: dict = field(default_factory=dict)
     # Freshness tracking
     freshness: dict = field(default_factory=dict)
+    # Gemini File API URI for reuse (e.g., transcript generation)
+    gemini_file_uri: str | None = None
 
 
 class ExtractionError(Exception):
@@ -341,6 +343,11 @@ def compute_token_budget(
 ) -> int:
     """Compute dynamic token budget based on extraction type and content size.
 
+    Proportional formulas (densified prompts need more output room):
+    - deep (PPTX): base 8192 + 280 per slide, cap 24576
+    - multimodal (MP4): base 6144 + 150 per 5 minutes, cap 16384
+    - standard: flat 8192
+
     Args:
         depth: "standard", "deep", or "multimodal"
         config: Unified config dict (reads llm.token_budgets). Falls back to defaults.
@@ -353,20 +360,20 @@ def compute_token_budget(
     budgets = (config or {}).get("llm", {}).get("token_budgets", {})
 
     if depth == "deep":
-        base = budgets.get("deep_base", 16384)
-        extra_slides = max(0, slide_count - 20)
-        per_slide = budgets.get("deep_per_slide_over_20", 256)
+        base = budgets.get("deep_base", 8192)
+        per_slide = budgets.get("deep_per_slide", 280)
         maximum = budgets.get("deep_max", 24576)
-        budget = min(base + extra_slides * per_slide, maximum)
+        budget = min(base + slide_count * per_slide, maximum)
         log.info("Token budget: %d for depth=%s (slides=%d)", budget, depth, slide_count)
         return budget
 
     elif depth == "multimodal":
-        base = budgets.get("multimodal_base", 8192)
-        extra_minutes = max(0, duration_min - 30)
-        per_minute = budgets.get("multimodal_per_minute_over_30", 128)
+        base = budgets.get("multimodal_base", 6144)
+        # 150 tokens per 5-minute block
+        blocks = duration_min // 5 if duration_min > 0 else 0
+        per_block = budgets.get("multimodal_per_5min", 150)
         maximum = budgets.get("multimodal_max", 16384)
-        budget = min(base + extra_minutes * per_minute, maximum)
+        budget = min(base + blocks * per_block, maximum)
         log.info("Token budget: %d for depth=%s (duration=%dmin)", budget, depth, duration_min)
         return budget
 
@@ -418,6 +425,7 @@ def extract_knowledge(
     model = _get_model(config)
 
     INLINE_SIZE_LIMIT = 20 * 1024 * 1024  # 20MB
+    _gemini_file_uri = None  # Track uploaded file URI for transcript reuse
 
     # --- Classify doc type BEFORE Gemini call ---
     doc_type = classify_doc_type(str(file.path))
@@ -447,6 +455,7 @@ def extract_knowledge(
 
             # Upload video, add frames, append unified prompt (no system_instruction)
             uploaded = _upload_and_wait(client, file.path, config)
+            _gemini_file_uri = uploaded.uri
             contents = [types.Part.from_uri(file_uri=uploaded.uri, mime_type=uploaded.mime_type)]
 
             selected = sampled_frames[:MAX_FRAMES_PER_REQUEST]
@@ -467,6 +476,7 @@ def extract_knowledge(
         log.info("Extracting %s (no frames)...", file.path.name)
         prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
         uploaded = _upload_and_wait(client, file.path, config)
+        _gemini_file_uri = uploaded.uri
         contents = [
             types.Part.from_uri(file_uri=uploaded.uri, mime_type=uploaded.mime_type),
             types.Part.from_text(text=prompt),
@@ -560,6 +570,9 @@ def extract_knowledge(
 
     # Freshness tracking
     result.freshness = compute_freshness_fields(file.path)
+
+    # Store Gemini file URI for transcript reuse
+    result.gemini_file_uri = _gemini_file_uri
 
     log.info(
         "Extracted: '%s' | slides=%d | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d",

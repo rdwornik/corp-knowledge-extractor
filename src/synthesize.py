@@ -36,6 +36,8 @@ from src.extract import ExtractionResult
 from src.inventory import FileType, SourceFile
 from src.utils import parse_llm_json
 
+from src.transcript import TranscriptResult
+
 log = logging.getLogger(__name__)
 
 PIPELINE_VERSION = "2.0.0"
@@ -151,6 +153,48 @@ def _prompt_hash(config: dict) -> str:
     """Hash the extract prompt for change tracking."""
     prompt = (config.get("prompts") or {}).get("extract", "")
     return hashlib.sha256(prompt.encode()).hexdigest()[:12]
+
+
+def write_transcript_note(
+    transcript: TranscriptResult,
+    title: str,
+    extraction_note_filename: str,
+    extract_dir: Path,
+) -> Path | None:
+    """Write a transcript markdown note if transcript succeeded.
+
+    Args:
+        transcript: TranscriptResult from generate_transcript()
+        title: Title from the extraction result
+        extraction_note_filename: Filename of the linked extraction note
+        extract_dir: Directory to write the transcript note
+
+    Returns:
+        Path to the written file, or None if transcript failed.
+    """
+    if transcript.status != "complete" or not transcript.text:
+        return None
+
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    stem = Path(transcript.source_path).stem
+    note_path = extract_dir / f"{stem}_transcript.md"
+
+    source_path = transcript.source_path.replace("\\", "/")
+    frontmatter = (
+        f"---\n"
+        f"type: transcript\n"
+        f"source: {source_path}\n"
+        f"title: \"{title} — Full Transcript\"\n"
+        f"duration_min: {transcript.duration_min}\n"
+        f"word_count: {transcript.word_count}\n"
+        f"linked_extraction: {extraction_note_filename}\n"
+        f"---\n\n"
+    )
+
+    content = frontmatter + transcript.text
+    note_path.write_text(content, encoding="utf-8")
+    log.info("Wrote transcript note: %s (%d words)", note_path.name, transcript.word_count)
+    return note_path
 
 
 def build_package(
