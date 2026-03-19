@@ -5,6 +5,7 @@ Adds CKE-specific logic: unknown term logging to local file.
 """
 
 import logging
+import re
 import yaml
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -19,6 +20,14 @@ from corp_os_meta.models import NoteFrontmatter
 from corp_os_meta.normalize import load_taxonomy
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_company_names(text: str) -> str:
+    """Fix known LLM company name duplications."""
+    if not text:
+        return text
+    text = re.sub(r'(?i)\b(Blue\s+){2,}Yonder\b', 'Blue Yonder', text)
+    return text
 
 
 @dataclass
@@ -81,16 +90,20 @@ def post_process_extraction(
     raw_result.setdefault("domains", [])
 
     # Fix duplicated company names (Gemini sometimes doubles "Blue Yonder")
-    title = raw_result.get("title", "")
-    if "Blue Blue Yonder" in title:
-        raw_result["title"] = title.replace("Blue Blue Yonder", "Blue Yonder")
-    summary = raw_result.get("summary", "")
-    if "Blue Blue Yonder" in summary:
-        raw_result["summary"] = summary.replace("Blue Blue Yonder", "Blue Yonder")
+    for str_field in ("title", "summary"):
+        val = raw_result.get(str_field, "")
+        if val:
+            raw_result[str_field] = normalize_company_names(val)
 
     # Normalize using corp-os-meta taxonomy
     taxonomy = load_taxonomy()
     normalized_data, changes, unknown = normalize_frontmatter(raw_result, taxonomy)
+
+    # Apply company name normalization after corp-os-meta (it may copy raw strings)
+    for str_field in ("title", "summary"):
+        val = normalized_data.get(str_field, "")
+        if val:
+            normalized_data[str_field] = normalize_company_names(val)
 
     if changes:
         logger.info("Normalized: %s", ", ".join(changes))

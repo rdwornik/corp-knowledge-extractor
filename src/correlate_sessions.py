@@ -1,7 +1,7 @@
 """Detect correlated PPTX+MP4 file pairs for session merging.
 
 Stage 1: Pre-extraction filename heuristics (fast, no API).
-Stage 2: Post-extraction metadata confirmation (title similarity, slide count alignment).
+Stage 2: Post-extraction metadata confirmation (composite 2-of-N scoring).
 """
 
 import logging
@@ -10,6 +10,19 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def word_jaccard(a: str, b: str) -> float:
+    """Compute word-level Jaccard similarity: |intersection| / |union|."""
+    words_a = set(a.lower().split())
+    words_b = set(b.lower().split())
+    if not words_a and not words_b:
+        return 1.0
+    if not words_a or not words_b:
+        return 0.0
+    intersection = words_a & words_b
+    union = words_a | words_b
+    return len(intersection) / len(union)
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov"}
 
@@ -120,44 +133,70 @@ def confirm_stage2(
     candidate: CorrelationCandidate,
     pptx_extraction: dict,
     video_extraction: dict,
-    title_threshold: float = 0.8,
-    slide_tolerance: int = 2,
+    filename_sim_threshold: float = 0.65,
+    title_jaccard_threshold: float = 0.50,
+    slide_tolerance: int = 3,
+    slide_pct_tolerance: float = 0.25,
+    topic_overlap_threshold: float = 0.60,
 ) -> CorrelationCandidate:
-    """Stage 2: Confirm correlation using extracted metadata.
+    """Stage 2: Confirm correlation using composite 2-of-N scoring.
 
-    Confirms if:
-    - Extracted titles are similar (>threshold) OR
-    - Slide counts align (within tolerance)
+    Signals evaluated:
+    1. filename_similarity > 0.65 (from Stage 1)
+    2. title_jaccard > 0.50 (word-level Jaccard of extracted titles)
+    3. slide_count within ±3 or ±25%
+    4. topic_overlap > 0.60 (Jaccard of topics lists)
 
-    If neither matches: downgrade to crosslink (no merge).
+    Merge if 2+ signals pass; otherwise crosslink.
     """
-    pptx_title = (pptx_extraction.get("title") or "").lower()
-    video_title = (video_extraction.get("title") or "").lower()
-    title_sim = SequenceMatcher(None, pptx_title, video_title).ratio()
+    signals_passed: list[str] = []
 
+    # Signal 1: filename similarity (already computed in Stage 1)
+    if candidate.filename_similarity > filename_sim_threshold:
+        signals_passed.append(f"filename_sim={candidate.filename_similarity:.2f}")
+
+    # Signal 2: title Jaccard
+    pptx_title = pptx_extraction.get("title") or ""
+    video_title = video_extraction.get("title") or ""
+    title_jac = word_jaccard(pptx_title, video_title)
+    if title_jac > title_jaccard_threshold:
+        signals_passed.append(f"title_jaccard={title_jac:.2f}")
+
+    # Signal 3: slide count alignment
     pptx_slides = pptx_extraction.get("slide_count", 0)
     video_slides = len(video_extraction.get("slides", []))
-    slide_match = (
-        abs(pptx_slides - video_slides) <= slide_tolerance
-        if (pptx_slides and video_slides)
-        else False
-    )
+    if pptx_slides and video_slides:
+        abs_diff = abs(pptx_slides - video_slides)
+        max_slides = max(pptx_slides, video_slides)
+        pct_diff = abs_diff / max_slides if max_slides else 1.0
+        if abs_diff <= slide_tolerance or pct_diff <= slide_pct_tolerance:
+            signals_passed.append(f"slide_count={pptx_slides}vs{video_slides}")
 
-    confirmed = title_sim >= title_threshold or slide_match
+    # Signal 4: topic overlap
+    pptx_topics = set(t.lower() for t in (pptx_extraction.get("topics") or []))
+    video_topics = set(t.lower() for t in (video_extraction.get("topics") or []))
+    if pptx_topics and video_topics:
+        topic_union = pptx_topics | video_topics
+        topic_inter = pptx_topics & video_topics
+        topic_jac = len(topic_inter) / len(topic_union)
+        if topic_jac > topic_overlap_threshold:
+            signals_passed.append(f"topic_overlap={topic_jac:.2f}")
+
+    confirmed = len(signals_passed) >= 2
 
     if confirmed:
         combined_confidence = min(
-            100, int((candidate.stage1_confidence + title_sim * 100) / 2)
+            100, int((candidate.stage1_confidence + len(signals_passed) * 25) / 2)
         )
         candidate.stage2_confirmed = True
         candidate.stage2_confidence = combined_confidence
         candidate.merge_decision = "merge"
         logger.info(
-            "Stage 2 CONFIRMED: %s <-> %s (title_sim=%.2f, slide_match=%s, confidence=%d)",
+            "Stage 2 CONFIRMED: %s <-> %s (%d signals: %s, confidence=%d)",
             candidate.pptx_path.name,
             candidate.video_path.name,
-            title_sim,
-            slide_match,
+            len(signals_passed),
+            ", ".join(signals_passed),
             combined_confidence,
         )
     else:
@@ -165,11 +204,11 @@ def confirm_stage2(
         candidate.stage2_confidence = candidate.stage1_confidence * 0.5
         candidate.merge_decision = "crosslink"
         logger.warning(
-            "Stage 2 REJECTED merge: %s <-> %s (title_sim=%.2f, slide_match=%s). Emitting as crosslink.",
+            "Stage 2 REJECTED merge: %s <-> %s (%d signal(s): %s). Emitting as crosslink.",
             candidate.pptx_path.name,
             candidate.video_path.name,
-            title_sim,
-            slide_match,
+            len(signals_passed),
+            ", ".join(signals_passed) if signals_passed else "none",
         )
 
     return candidate

@@ -575,6 +575,124 @@ def extract_knowledge(
     return result
 
 
+def _try_pptx_pdf_multimodal(
+    file: SourceFile,
+    config: dict,
+    text_result: TextExtractionResult,
+) -> ExtractionResult | None:
+    """Attempt PPTX→PDF conversion and Gemini multimodal extraction.
+
+    Returns ExtractionResult on success, None if PDF conversion fails.
+    """
+    import copy
+    from google.genai import types
+    from src.slides.pdf_converter import convert_pptx_to_pdf
+    from src.doc_type_classifier import classify_doc_type, should_extract_deep
+    from src.deep_prompt import build_deep_multimodal_prompt
+    from src.freshness import compute_freshness_fields
+
+    # Convert PPTX to PDF
+    import tempfile
+    pdf_dir = Path(tempfile.mkdtemp(prefix="cke_pptx_pdf_"))
+    pdf_path = convert_pptx_to_pdf(file.path, pdf_dir)
+
+    if pdf_path is None:
+        return None
+
+    log.info("PPTX→PDF conversion succeeded for %s, sending PDF to Gemini multimodal", file.path.name)
+
+    client = _get_client(config)
+    model = _get_model(config)
+
+    doc_type = classify_doc_type(str(file.path))
+    use_deep = should_extract_deep(doc_type)
+
+    # Build prompt with text grounding
+    if use_deep:
+        deep_prompt = build_deep_multimodal_prompt(doc_type)
+        taxonomy = get_taxonomy_for_prompt()
+        prompt = f"{deep_prompt}\n\n{taxonomy}"
+    else:
+        prompt = _get_prompt(config, "extract")
+
+    # Include text grounding from python-pptx
+    text_grounding = text_result.text[:30000] if text_result.text else ""
+    if text_grounding:
+        prompt += f"\n\n--- TEXT GROUNDING (from python-pptx) ---\n{text_grounding}"
+
+    # Upload PDF and send to Gemini
+    uploaded = _upload_and_wait(client, pdf_path, config)
+    contents = [
+        types.Part.from_uri(file_uri=uploaded.uri, mime_type="application/pdf"),
+        types.Part.from_text(text=prompt),
+    ]
+
+    slide_count = text_result.slide_count or 0
+    token_budget = compute_token_budget(
+        depth="deep" if use_deep else "standard",
+        config=config,
+        slide_count=slide_count,
+    )
+
+    response = client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            max_output_tokens=token_budget,
+        ),
+    )
+
+    response_text = response.text or ""
+    tokens = 0
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        tokens = getattr(response.usage_metadata, "total_token_count", 0) or 0
+
+    data = _parse_response(response_text, file)
+
+    # Handle deep extraction overlay
+    overlay_data = {}
+    if use_deep:
+        overlay_key = f"{doc_type}_overlay"
+        if overlay_key in data:
+            overlay_data = data.pop(overlay_key) or {}
+
+    raw_data = copy.deepcopy(data)
+
+    pp = post_process_extraction(
+        raw_result=data,
+        source_tool="knowledge-extractor",
+        source_file=str(file.path),
+    )
+
+    result = _result_from_json(pp.data, file, tokens)
+    result.links_line = pp.links_line
+    result.validation_result = pp.validation_result.value
+    result.raw_json = raw_data
+
+    result.doc_type = doc_type
+    result.depth = "deep" if use_deep else "standard"
+    result.extraction_version = 2 if use_deep else 1
+    result.overlay = overlay_data
+
+    result.source_date = extract_source_date(file.path)
+    result.facts = _enrich_facts(data, file, result.source_date, text_result)
+    result.freshness = compute_freshness_fields(file.path)
+
+    # Cleanup temp PDF
+    try:
+        pdf_path.unlink(missing_ok=True)
+        pdf_dir.rmdir()
+    except OSError:
+        pass
+
+    log.info(
+        "PPTX PDF multimodal extracted: '%s' | doc_type=%s | deep=%s | tokens=%d",
+        result.title, doc_type, use_deep, tokens,
+    )
+    return result
+
+
 def extract_from_text(
     file: SourceFile,
     config: dict,
@@ -583,6 +701,10 @@ def extract_from_text(
 ) -> ExtractionResult:
     """
     Tier 2: Send pre-extracted text to AI provider (Claude Haiku or Gemini).
+
+    For PPTX files: attempts PDF conversion first for Gemini multimodal.
+    If PDF conversion succeeds, sends PDF to Gemini with deep_multimodal prompt
+    and text grounding. Falls back to text-only on failure.
 
     Routes through the provider abstraction layer. For deep-eligible doc types,
     uses the deep extraction prompt with overlay fields. Falls back to standard
@@ -604,6 +726,15 @@ def extract_from_text(
     from src.providers.base import ExtractionRequest
     from src.providers.validator import validate_and_retry
     from src.freshness import compute_freshness_fields
+
+    # For PPTX: attempt PDF conversion for multimodal extraction
+    if file.path.suffix.lower() == ".pptx" and custom_prompt is None:
+        try:
+            result = _try_pptx_pdf_multimodal(file, config, text_result)
+            if result is not None:
+                return result
+        except Exception as exc:
+            log.warning("PPTX PDF multimodal failed for %s: %s — falling back to text-only", file.path.name, exc)
 
     # Truncate very long text to stay within token limits
     text_content = text_result.text[:80000]

@@ -1,5 +1,6 @@
 """Tests for session correlation detection (Stage 1 + Stage 2)."""
 
+import pytest
 from pathlib import Path
 
 from src.correlate_sessions import (
@@ -8,6 +9,7 @@ from src.correlate_sessions import (
     filename_similarity,
     detect_stage1,
     confirm_stage2,
+    word_jaccard,
 )
 
 
@@ -102,8 +104,27 @@ class TestDetectStage1:
         assert group.standalone[0] == txt
 
 
+class TestWordJaccard:
+    def test_word_jaccard_identical(self):
+        assert word_jaccard("hello world", "hello world") == 1.0
+
+    def test_word_jaccard_partial(self):
+        result = word_jaccard("journey cognitive cloud", "cognitive cloud training")
+        assert result == pytest.approx(0.5, abs=0.01)
+
+    def test_word_jaccard_disjoint(self):
+        assert word_jaccard("budget review", "platform architecture") == 0.0
+
+    def test_word_jaccard_empty_both(self):
+        assert word_jaccard("", "") == 1.0
+
+    def test_word_jaccard_one_empty(self):
+        assert word_jaccard("hello", "") == 0.0
+
+
 class TestConfirmStage2:
     def test_title_match_confirms(self):
+        """filename_sim=0.8 (pass) + title_jaccard high (pass) → merge."""
         candidate = CorrelationCandidate(
             pptx_path=Path("a.pptx"),
             video_path=Path("a.mp4"),
@@ -119,6 +140,7 @@ class TestConfirmStage2:
         assert candidate.stage2_confirmed is True
 
     def test_slide_count_match_confirms(self):
+        """filename_sim=0.7 (pass) + slide_count ±1 (pass) → merge."""
         candidate = CorrelationCandidate(
             pptx_path=Path("a.pptx"),
             video_path=Path("a.mp4"),
@@ -133,6 +155,7 @@ class TestConfirmStage2:
         assert candidate.merge_decision == "merge"
 
     def test_no_match_becomes_crosslink(self):
+        """Only filename_sim barely passes (0.65 not > 0.65) — 0 signals → crosslink."""
         candidate = CorrelationCandidate(
             pptx_path=Path("a.pptx"),
             video_path=Path("b.mp4"),
@@ -146,3 +169,84 @@ class TestConfirmStage2:
         )
         assert candidate.merge_decision == "crosslink"
         assert candidate.stage2_confirmed is False
+
+    def test_stage2_two_signals_merge(self):
+        """filename_sim=0.71 + title_jaccard=0.55 → 2 signals → merge."""
+        candidate = CorrelationCandidate(
+            pptx_path=Path("a.pptx"),
+            video_path=Path("a.mp4"),
+            filename_similarity=0.71,
+            stage1_confidence=71,
+        )
+        # Titles with >0.50 Jaccard: "cloud platform demo" vs "cloud platform overview"
+        # Jaccard = {cloud, platform} / {cloud, platform, demo, overview} = 2/4 = 0.50
+        # Need > 0.50, so use closer titles
+        candidate = confirm_stage2(
+            candidate,
+            {"title": "Cloud Platform Demo Session", "slide_count": 5},
+            {"title": "Cloud Platform Demo Recording", "slides": [{}] * 30},
+        )
+        assert candidate.merge_decision == "merge"
+        assert candidate.stage2_confirmed is True
+
+    def test_stage2_one_signal_crosslink(self):
+        """Only filename_sim passes → 1 signal → crosslink."""
+        candidate = CorrelationCandidate(
+            pptx_path=Path("x.pptx"),
+            video_path=Path("x.mp4"),
+            filename_similarity=0.75,
+            stage1_confidence=75,
+        )
+        candidate = confirm_stage2(
+            candidate,
+            {"title": "Budget Review 2026", "slide_count": 5},
+            {"title": "Platform Architecture Deep Dive", "slides": [{}] * 30},
+        )
+        assert candidate.merge_decision == "crosslink"
+
+    def test_stage2_slide_count_and_topics(self):
+        """slide_count ±2 + topic_overlap 0.7 → 2 signals → merge."""
+        candidate = CorrelationCandidate(
+            pptx_path=Path("a.pptx"),
+            video_path=Path("a.mp4"),
+            filename_similarity=0.50,  # below threshold
+            stage1_confidence=50,
+        )
+        candidate = confirm_stage2(
+            candidate,
+            {
+                "title": "Totally Different Title A",
+                "slide_count": 20,
+                "topics": ["SLA", "Disaster Recovery", "Cloud Migration"],
+            },
+            {
+                "title": "Completely Unrelated Title B",
+                "slides": [{}] * 18,
+                "topics": ["SLA", "Disaster Recovery", "Cloud Migration", "Pricing"],
+            },
+        )
+        assert candidate.merge_decision == "merge"
+
+    def test_stage2_real_cognitive_friday(self):
+        """Actual S4E1 Cognitive Friday titles → should merge."""
+        candidate = CorrelationCandidate(
+            pptx_path=Path("Cognitive Friday S4E1 J2CC.pptx"),
+            video_path=Path("Cognitive Friday S4E1 - Journey to the Cloud.mp4"),
+            filename_similarity=0.72,
+            stage1_confidence=72,
+        )
+        candidate = confirm_stage2(
+            candidate,
+            {
+                "title": "Cognitive Friday S4E1 - Journey to the Cognitive Cloud",
+                "slide_count": 25,
+                "topics": ["Cloud Migration", "SLA"],
+            },
+            {
+                "title": "Cognitive Friday Season 4 Episode 1 - Journey to the Cognitive Cloud",
+                "slides": [{}] * 23,
+                "topics": ["Cloud Migration", "SLA", "Platform"],
+            },
+        )
+        assert candidate.merge_decision == "merge"
+        assert candidate.stage2_confirmed is True

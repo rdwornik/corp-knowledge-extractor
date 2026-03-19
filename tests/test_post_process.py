@@ -487,3 +487,48 @@ def test_backslash_normalized_in_source():
     normalized = path.replace("\\", "/")
     assert "\\" not in normalized
     assert "C:/Users/test/file.pdf" == normalized
+
+
+# ---------------------------------------------------------------------------
+# Company name normalization tests (FIX 2)
+# ---------------------------------------------------------------------------
+
+
+from src.post_process import normalize_company_names
+
+
+def test_normalize_blue_blue():
+    assert normalize_company_names("Blue Blue Yonder Platform") == "Blue Yonder Platform"
+
+
+def test_normalize_already_correct():
+    assert normalize_company_names("Blue Yonder Platform") == "Blue Yonder Platform"
+
+
+def test_normalize_triple():
+    assert normalize_company_names("Blue Blue Blue Yonder") == "Blue Yonder"
+
+
+def test_normalize_case_insensitive():
+    result = normalize_company_names("blue blue yonder")
+    assert result == "Blue Yonder"
+
+
+def test_normalize_in_summary():
+    """Summary field also cleaned via post_process_extraction."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": [],
+            "summary": "Blue Blue Yonder released new features.",
+        },
+        source_file="test.md",
+    )
+    assert "Blue Blue" not in result.data["summary"]
+    assert "Blue Yonder" in result.data["summary"]
+
+
+def test_normalize_no_false_positive():
+    assert normalize_company_names("Blue Sky Yonder") == "Blue Sky Yonder"

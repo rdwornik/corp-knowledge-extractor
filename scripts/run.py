@@ -32,6 +32,7 @@ from src.correlate import correlate_files
 from src.synthesize import build_package
 from src.reextract import reextract_package
 from src.frames.sampler import sample_frames, SampledFrame
+from src.frames.scene_detect import scene_detect
 from src.compress import compress_video
 
 logging.basicConfig(
@@ -323,7 +324,7 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
                 compressed_paths[f.name] = compressed_out
 
     # --- 3. Sample frames from videos ---
-    # Sample from the compressed copy (clean h264 stream) instead of the original.
+    # Use scene detection (ffmpeg) with fallback to time-based sampling.
     _print("\nSampling frames from videos...")
     sampled: dict[str, list[SampledFrame]] = {}  # stem → frames
     for f in files:
@@ -331,7 +332,7 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
             sample_source = compressed_paths.get(f.name, f.path)
             temp_dir = output_p / package_name / "temp_frames" / f.name
             _print(f"  -> {f.path.name}")
-            frames = sample_frames(sample_source, temp_dir, config)
+            frames = scene_detect(sample_source, temp_dir, config)
             sampled[f.name] = frames
             _print(f"    {len(frames)} frames sampled")
 
