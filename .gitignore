@@ -58,4 +58,5 @@ data/input/
 .ruff_cache/
 
 # Claude Code (local settings only — rules/ is tracked)
-.claude/settings.local.jsontmp_debug/
+.claude/settings.local.json
+tmp_debug/
