@@ -54,5 +54,8 @@ htmlcov/
 data/input/
 /output/
 
-# Claude
-.claude
+# Ruff
+.ruff_cache/
+
+# Claude Code (local settings only — rules/ is tracked)
+.claude/settings.local.json

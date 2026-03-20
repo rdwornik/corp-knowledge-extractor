@@ -189,6 +189,23 @@ click, rich, Jinja2, PyYAML, python-dotenv
 packaging, requests
 ```
 
+## Integration points
+
+CKE is a PURE extraction engine — input in, structured knowledge out.
+
+- **corp-os-meta**: imports Pydantic schemas, taxonomy, normalization (post_process.py)
+- **corp-by-os**: invokes CKE via subprocess `cke process-manifest` (ingest pipeline)
+- **corp-project-extractor**: invokes CKE via subprocess `cke process-manifest` (extraction)
+
+CKE does NOT write to the vault. Output goes to staging; corp-by-os copies to vault.
+
+## Related repos
+
+- [ECOSYSTEM.md](../ECOSYSTEM.md) — full ecosystem overview
+- [corp-os-meta](../corp-os-meta/) — shared schema (import dependency)
+- [corp-by-os](../corp-by-os/) — orchestrator (invokes CKE)
+- [corp-project-extractor](../corp-project-extractor/) — project classifier (invokes CKE)
+
 ## Known issues
 
 1. **quality field mismatch** — Gemini outputs "high", schema expects "full|partial|fragment"
