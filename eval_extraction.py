@@ -177,6 +177,16 @@ def evaluate_package(package_dir: Path) -> dict:
         else:
             file_eval["slide_coverage"] = None
 
+        # Determine if this is a static document (PDF/DOCX — no speakers/meetings)
+        source_ext = Path(source_path).suffix.lower() if source_path else ""
+        content_type = fm.get("type", "")
+        is_static_doc = source_ext in (".pdf", ".docx") or content_type in ("document", "documentation")
+        is_video = source_ext in (".mp4", ".mkv", ".avi", ".mov", ".wav")
+        file_eval["is_static_doc"] = is_static_doc
+
+        # Low content flag
+        file_eval["low_content"] = content["total_chars"] < 2000
+
         # Score (0-100) — weighted by value
         score = 0
 
@@ -184,10 +194,21 @@ def evaluate_package(package_dir: Path) -> dict:
         specific_facts = fact_quality["specific_count"]
         score += min(20, specific_facts * 2)
 
-        # Overlay: max 20 (raised from 10 — structured data is high value)
+        # Overlay: max 20 (doc-type-aware scoring)
         if file_eval["has_overlay"]:
-            score += 5  # base for having overlay at all
-            score += min(15, file_eval["overlay_fields_populated"] * 3)
+            populated = file_eval["overlay_fields_populated"]
+            if is_static_doc:
+                # Static docs (PDF/DOCX) can't have attendees/action_items/decisions
+                # Score on what's present: ≥3 fields = full marks
+                score += 5  # base
+                if populated >= 3:
+                    score += 15  # full overlay score
+                else:
+                    score += min(15, populated * 5)
+            else:
+                # Video/PPTX: strict scoring against expected fields
+                score += 5  # base
+                score += min(15, populated * 3)
 
         # Freshness: 10
         score += 10 if file_eval["has_freshness"] else 0
@@ -257,8 +278,12 @@ def print_scorecard(result: dict):
             print(f"  !! No key_facts extracted")
         elif fq["quality_ratio"] < 0.5:
             print(f"  !! {fq['generic_count']}/{fq['count']} facts are generic (<30 chars)")
-        if feval["content"]["total_chars"] < 500:
+        if feval.get("low_content"):
+            print(f"  !! Low content source ({feval['content']['total_chars']} chars) — score reflects limited material")
+        elif feval["content"]["total_chars"] < 500:
             print(f"  !! Very short content ({feval['content']['total_chars']} chars)")
+        if feval.get("is_static_doc"):
+            print(f"  (static doc — overlay scored on present fields, not meeting fields)")
         if not feval["has_overlay"] and feval["depth"] == "deep":
             print(f"  !! Deep extraction but no overlay")
         if feval["quality"] == "fragment":
