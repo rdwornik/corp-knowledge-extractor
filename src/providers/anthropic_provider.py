@@ -22,7 +22,7 @@ class AnthropicProvider(ExtractionProvider):
 
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not set. Set it in .env or environment.")
+            raise ValueError("ANTHROPIC_API_KEY not set. Check global env (keys list).")
         self.client = anthropic.Anthropic(api_key=api_key)
 
     def extract(self, request: ExtractionRequest) -> ExtractionResponse:

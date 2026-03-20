@@ -9,9 +9,8 @@ Python pipeline that extracts structured knowledge from corporate files (video, 
 ```bash
 pip install -e ../corp-os-meta    # shared schema dependency
 pip install -e .                  # install CKE + deps
-# Create .env with GEMINI_API_KEY=your_key_here
 cke process <path>                # process a file or folder
-python -m pytest                  # run tests (324 pass, 4 skip)
+python -m pytest                  # run tests (474+ pass, 4 skip)
 ```
 
 ## Architecture
@@ -168,6 +167,16 @@ project: str             # from manifest
 8. **corp_os_meta is shared source of truth** — taxonomy, normalization, validation, links
 9. **gemini-3-flash-preview** for all AI tiers (since 2026-03-12, fallback: gemini-2.5-flash)
 10. **tojson_raw** over Jinja2's tojson — preserve & characters in domain names
+
+## API Keys
+
+Keys loaded globally from `Documents/.secrets/.env` via PowerShell profile.
+Do NOT add API keys to local `.env`.
+Check: `keys list` | Update: `keys set KEY value` | Reload: `keys reload`
+
+This repo uses:
+- `GEMINI_API_KEY` (required) — Gemini multimodal extraction, synthesis, transcript, frame tagging
+- `ANTHROPIC_API_KEY` (optional) — Claude Haiku/Sonnet text extraction, falls back to Gemini if missing
 
 ## Dependencies
 

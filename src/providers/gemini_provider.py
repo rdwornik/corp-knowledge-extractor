@@ -30,7 +30,7 @@ class GeminiProvider(ExtractionProvider):
         api_key_env = os.environ.get("GEMINI_API_KEY_ENV", "GEMINI_API_KEY")
         api_key = os.environ.get(api_key_env)
         if not api_key:
-            raise ValueError(f"{api_key_env} not set. Set it in .env or environment.")
+            raise ValueError(f"{api_key_env} not set. Check global env (keys list).")
         self.client = genai.Client(api_key=api_key)
 
     def extract(self, request: ExtractionRequest) -> ExtractionResponse:
