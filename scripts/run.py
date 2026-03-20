@@ -142,6 +142,35 @@ def _keep_pptx_slides(rendered_slides: list, output_dir: Path) -> None:
         pass
 
 
+def _propagate_session_id(extract_dir: Path, stem: str, session_id: str):
+    """Add session_id to individual extraction .json and .md files."""
+    # Update JSON sidecar
+    json_path = extract_dir / f"{stem}.json"
+    if json_path.exists():
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            data["session_id"] = session_id
+            json_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            log.warning("Failed to add session_id to %s: %s", json_path.name, exc)
+
+    # Update markdown frontmatter
+    md_path = extract_dir / f"{stem}.md"
+    if md_path.exists():
+        try:
+            text = md_path.read_text(encoding="utf-8")
+            if text.startswith("---"):
+                end = text.find("---", 3)
+                if end != -1:
+                    fm_text = text[3:end]
+                    if "session_id:" not in fm_text:
+                        # Insert session_id before closing ---
+                        new_fm = fm_text.rstrip() + f"\nsession_id: \"{session_id}\"\n"
+                        md_path.write_text(f"---\n{new_fm}---{text[end+3:]}", encoding="utf-8")
+        except Exception as exc:
+            log.warning("Failed to add session_id to %s: %s", md_path.name, exc)
+
+
 def _try_session_merge(files, extracts, extract_dir, _print_fn):
     """Detect correlated PPTX+MP4 pairs and merge into session notes.
 
@@ -203,6 +232,10 @@ def _try_session_merge(files, extracts, extract_dir, _print_fn):
                 _print_fn(f"  Merged: {candidate.pptx_path.name} + {candidate.video_path.name} -> {session_md_path.name}")
                 log.info("Merged session: %s", merged["session_id"])
 
+                # Propagate session_id to individual extraction files
+                for stem in (pptx_stem, video_stem):
+                    _propagate_session_id(extract_dir, stem, merged["session_id"])
+
             elif candidate.merge_decision == "crosslink":
                 _print_fn(f"  Crosslinked (low confidence): {candidate.pptx_path.name} <-> {candidate.video_path.name}")
 
@@ -235,7 +268,8 @@ def cli(ctx):
               help="Custom extraction prompt file (replaces default prompt)")
 @click.option("--model", default=None, help="Override Gemini model (default from settings.yaml)")
 @click.option("--no-compress", is_flag=True, help="Skip FFmpeg compression (fast testing; may cause h264 decode errors)")
-def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None, no_compress: bool):
+@click.option("--force", is_flag=True, help="Force re-extraction even if output exists with matching hash")
+def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None, no_compress: bool, force: bool):
     """Process a file or folder into a knowledge package.
 
     INPUT_PATH defaults to the data/input/ directory from config if not given.
@@ -350,6 +384,8 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
 
     rendered_pptx_slides: dict[str, list] = {}  # stem -> RenderedSlide list
 
+    extract_dir_check = output_p / package_name / "extract"
+
     for f in files:
         decision = tier_decisions[f.name]
         frames = sampled.get(f.name)
@@ -357,6 +393,33 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
         tier_label = f"[Tier {decision.tier.value}]"
         label = f"{tier_label} {f.path.name}" + (f" + {frame_count} frames" if frame_count else "")
         _print(f"  -> {label}")
+
+        # Resume: skip if output exists with matching source_hash
+        if not force:
+            existing_json = extract_dir_check / f"{f.path.stem}.json"
+            if existing_json.exists():
+                try:
+                    existing = json.loads(existing_json.read_text(encoding="utf-8"))
+                    existing_hash = (existing.get("freshness") or {}).get("source_hash")
+                    if existing_hash:
+                        from src.freshness import compute_source_hash
+                        current_hash = compute_source_hash(f.path)
+                        if existing_hash == current_hash:
+                            _print(f"    [SKIP] Already extracted (hash match)")
+                            log.info("Skipping %s — already extracted (hash match)", f.path.name)
+                            # Load existing result for downstream steps
+                            from src.extract import ExtractionResult
+                            extracts[f.name] = ExtractionResult(
+                                source_file=f,
+                                title=existing.get("title", f.path.stem),
+                                summary=existing.get("summary", ""),
+                                facts=existing.get("facts", []),
+                                raw_json=existing,
+                            )
+                            continue
+                except Exception as exc:
+                    log.debug("Resume check failed for %s: %s", f.path.name, exc)
+
         try:
             if decision.tier == Tier.LOCAL and decision.text_result:
                 result = extract_local(f, decision.text_result)

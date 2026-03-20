@@ -33,7 +33,8 @@ class TestPdfSourceDate:
             result = extract_source_date(pdf_path)
         assert result == "2024-12"
 
-    def test_no_metadata(self, tmp_path):
+    def test_no_metadata_falls_to_mtime(self, tmp_path):
+        """No PDF metadata → falls back to file mtime."""
         pdf_path = tmp_path / "test.pdf"
         pdf_path.write_bytes(b"fake")
 
@@ -44,9 +45,11 @@ class TestPdfSourceDate:
 
         with patch("pdfplumber.open", return_value=mock_pdf):
             result = extract_source_date(pdf_path)
-        assert result is None
+        assert result is not None  # mtime fallback
+        assert result.startswith("20")
 
-    def test_none_metadata(self, tmp_path):
+    def test_none_metadata_falls_to_mtime(self, tmp_path):
+        """None metadata → falls back to file mtime."""
         pdf_path = tmp_path / "test.pdf"
         pdf_path.write_bytes(b"fake")
 
@@ -57,7 +60,7 @@ class TestPdfSourceDate:
 
         with patch("pdfplumber.open", return_value=mock_pdf):
             result = extract_source_date(pdf_path)
-        assert result is None
+        assert result is not None  # mtime fallback
 
 
 class TestPptxSourceDate:
@@ -74,7 +77,8 @@ class TestPptxSourceDate:
             result = extract_source_date(pptx_path)
         assert result == "2025-06"
 
-    def test_no_modified_date(self, tmp_path):
+    def test_no_modified_date_falls_to_mtime(self, tmp_path):
+        """No PPTX modified date → falls back to file mtime."""
         pptx_path = tmp_path / "test.pptx"
         pptx_path.write_bytes(b"fake")
 
@@ -83,7 +87,7 @@ class TestPptxSourceDate:
 
         with patch("pptx.Presentation", return_value=mock_prs):
             result = extract_source_date(pptx_path)
-        assert result is None
+        assert result is not None  # mtime fallback
 
 
 class TestDocxSourceDate:
@@ -116,28 +120,26 @@ class TestXlsxSourceDate:
         assert result == "2025-01"
 
 
-class TestUnsupportedFormats:
-    def test_txt_returns_none(self, tmp_path):
+class TestMtimeFallback:
+    def test_txt_returns_mtime(self, tmp_path):
+        """Unsupported types fall back to mtime."""
         txt_path = tmp_path / "test.txt"
         txt_path.write_text("hello")
-        assert extract_source_date(txt_path) is None
+        result = extract_source_date(txt_path)
+        assert result is not None
+        assert result.startswith("20")
 
-    def test_csv_returns_none(self, tmp_path):
-        csv_path = tmp_path / "test.csv"
-        csv_path.write_text("a,b,c")
-        assert extract_source_date(csv_path) is None
-
-    def test_mp4_returns_none(self, tmp_path):
+    def test_mp4_returns_mtime(self, tmp_path):
         mp4_path = tmp_path / "test.mp4"
         mp4_path.write_bytes(b"fake")
-        assert extract_source_date(mp4_path) is None
+        result = extract_source_date(mp4_path)
+        assert result is not None
 
-
-class TestExceptionHandling:
-    def test_corrupted_file_returns_none(self, tmp_path):
+    def test_corrupted_file_returns_mtime(self, tmp_path):
+        """Corrupted PDF → exception → mtime fallback."""
         pdf_path = tmp_path / "test.pdf"
         pdf_path.write_bytes(b"not a real pdf")
 
         with patch("pdfplumber.open", side_effect=Exception("corrupt")):
             result = extract_source_date(pdf_path)
-        assert result is None
+        assert result is not None  # mtime fallback

@@ -2,7 +2,9 @@ extracted_at: "{{ extracted_at }}"
 model: "{{ model }}"
 pipeline_version: "{{ pipeline_version }}"
 prompt_hash: "{{ prompt_hash }}"
-source_files:
+{% if cover_slide %}cover_slide: "{{ cover_slide }}"
+{% endif %}{% if cover_frame %}cover_frame: "{{ cover_frame }}"
+{% endif %}source_files:
 {% for f in source_files %}
   - path: "{{ f.path }}"
     type: "{{ f.type }}"

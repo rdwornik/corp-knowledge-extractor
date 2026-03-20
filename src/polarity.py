@@ -80,3 +80,54 @@ def detect_polarity(fact_text: str) -> str:
     if has_positive:
         return "positive"
     return "unknown"
+
+
+# Extended keyword lists for richer classification
+_POSITIVE_KEYWORDS = [
+    "improvement", "increase", "growth", "reduction in cost", "faster",
+    "better", "success", "achieved", "optimized", "streamlined", "automated",
+    "enhanced", "enabled", "efficient", "savings", "benefit",
+]
+_NEGATIVE_KEYWORDS = [
+    "risk", "concern", "fear", "barrier", "limitation", "does not",
+    "cannot", "failure", "degradation", "challenge", "delay", "expensive",
+    "complex", "issue", "problem", "downtime", "outage",
+]
+
+
+def classify_fact_polarity(fact: str) -> str:
+    """Classify a single fact as positive/negative/mixed/neutral using keywords.
+
+    Broader than detect_polarity() which uses regex patterns — this uses
+    substring keyword matching for sentiment-like classification.
+    """
+    if not fact:
+        return "neutral"
+    fact_lower = fact.lower()
+    has_positive = any(kw in fact_lower for kw in _POSITIVE_KEYWORDS)
+    has_negative = any(kw in fact_lower for kw in _NEGATIVE_KEYWORDS)
+
+    if has_positive and has_negative:
+        return "mixed"
+    elif has_positive:
+        return "positive"
+    elif has_negative:
+        return "negative"
+    else:
+        return "neutral"
+
+
+def classify_note_polarity(facts: list[dict]) -> str:
+    """Compute dominant_polarity for a note from its facts."""
+    polarities = [f.get("polarity", "neutral") for f in facts if isinstance(f, dict)]
+    if not polarities:
+        return "neutral"
+    pos = sum(1 for p in polarities if p == "positive")
+    neg = sum(1 for p in polarities if p == "negative")
+    if pos > neg * 2:
+        return "positive"
+    if neg > pos * 2:
+        return "negative"
+    if pos > 0 and neg > 0:
+        return "mixed"
+    return "neutral"

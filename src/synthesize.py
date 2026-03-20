@@ -350,11 +350,24 @@ def build_package(
 
     # --- Write _meta.yaml ---
     meta_tmpl = env.get_template("meta.yaml.j2")
+    # Determine cover image
+    slides_dir = pkg_dir / "source" / "slides"
+    frames_dir = pkg_dir / "source" / "frames"
+    cover_slide = None
+    cover_frame = None
+    if slides_dir.exists() and list(slides_dir.glob("slide_001.png")):
+        cover_slide = "slides/slide_001.png"
+    elif frames_dir.exists() and sorted(frames_dir.glob("*.png")):
+        first_frame = sorted(frames_dir.glob("*.png"))[0]
+        cover_frame = f"frames/{first_frame.name}"
+
     meta_content = meta_tmpl.render(
         extracted_at=now.isoformat(),
         model=model,
         pipeline_version=PIPELINE_VERSION,
         prompt_hash=_prompt_hash(config),
+        cover_slide=cover_slide,
+        cover_frame=cover_frame,
         source_files=[
             {
                 "path": str(f.path),

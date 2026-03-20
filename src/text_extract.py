@@ -52,7 +52,6 @@ def extract_source_date(file_path: Path) -> str | None:
                 date_str = info.get("CreationDate") or info.get("ModDate")
                 if date_str and isinstance(date_str, str) and date_str.startswith("D:"):
                     return f"{date_str[2:6]}-{date_str[6:8]}"
-                return None
         elif ext == ".pptx":
             from pptx import Presentation
 
@@ -60,7 +59,6 @@ def extract_source_date(file_path: Path) -> str | None:
             mod = prs.core_properties.modified
             if mod:
                 return mod.strftime("%Y-%m")
-            return None
         elif ext == ".docx":
             import docx
 
@@ -68,7 +66,6 @@ def extract_source_date(file_path: Path) -> str | None:
             mod = doc.core_properties.modified
             if mod:
                 return mod.strftime("%Y-%m")
-            return None
         elif ext in (".xlsx", ".xlsm"):
             import openpyxl
 
@@ -77,10 +74,22 @@ def extract_source_date(file_path: Path) -> str | None:
             wb.close()
             if mod:
                 return mod.strftime("%Y-%m")
-            return None
+        elif ext in (".mp4", ".mkv", ".avi", ".mov", ".wav"):
+            # Video/audio: use file system mtime
+            from datetime import datetime
+
+            mtime = file_path.stat().st_mtime
+            return datetime.fromtimestamp(mtime).strftime("%Y-%m")
+    except Exception:
+        pass
+    # Fallback: file system mtime for any type that failed or isn't handled
+    try:
+        from datetime import datetime
+
+        mtime = file_path.stat().st_mtime
+        return datetime.fromtimestamp(mtime).strftime("%Y-%m")
     except Exception:
         return None
-    return None
 
 
 def extract_text(path: Path) -> TextExtractionResult:
