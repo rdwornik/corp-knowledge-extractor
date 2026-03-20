@@ -10,7 +10,12 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 from config.config_loader import get  # noqa: E402
 
-load_dotenv()
+# Global API keys (Documents/.secrets/.env)
+_global_env = Path.home() / "Documents" / ".secrets" / ".env"
+if _global_env.exists():
+    load_dotenv(_global_env, override=False)
+# Local .env (project-specific vars only)
+load_dotenv(override=False)
 
 
 def tag_frames(frames: list[dict], batch_size: int = None) -> list[dict]:

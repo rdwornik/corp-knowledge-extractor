@@ -19,7 +19,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
-load_dotenv()
+
+# Global API keys (Documents/.secrets/.env)
+_global_env = Path.home() / "Documents" / ".secrets" / ".env"
+if _global_env.exists():
+    load_dotenv(_global_env, override=False)
+# Local .env (project-specific vars only)
+load_dotenv(override=False)
 
 from config.config_loader import load_config
 from src.compress import compress_video, needs_compression

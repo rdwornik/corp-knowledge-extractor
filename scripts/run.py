@@ -23,7 +23,12 @@ import json
 import click
 from dotenv import load_dotenv
 
-load_dotenv()
+# Global API keys (Documents/.secrets/.env)
+_global_env = Path.home() / "Documents" / ".secrets" / ".env"
+if _global_env.exists():
+    load_dotenv(_global_env, override=False)
+# Local .env (project-specific vars only)
+load_dotenv(override=False)
 
 from config.config_loader import load_config
 from src.inventory import scan_input, FileType
