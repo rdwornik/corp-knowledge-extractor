@@ -60,3 +60,6 @@ data/input/
 # Claude Code (local settings only — rules/ is tracked)
 .claude/settings.local.json
 tmp_debug/
+
+output_test/
+output_v2/
