@@ -86,7 +86,7 @@ class TestGetProvider:
     def test_unknown_model_raises(self):
         """Unknown model raises ValueError."""
         with pytest.raises(ValueError, match="Unknown model"):
-            get_provider("gpt-4-turbo")
+            get_provider("nonexistent-model-xyz")
 
     def test_gemini_model_creates_gemini_provider(self):
         """Gemini model creates GeminiProvider."""
