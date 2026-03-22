@@ -287,15 +287,23 @@ def build_package(
         if result.routing_reason:
             routing_reason = result.routing_reason
             prompt_version = result.prompt_version
+            actual_model, _ = select_model(
+                result.source_file.path,
+                result.source_file.size_bytes,
+                has_images=bool(result.slides or result.slide_image_paths),
+                model_override=config.get("model_override"),
+            )
         else:
             has_images = bool(result.slides or result.slide_image_paths)
-            _sel_model, routing_reason = select_model(
+            actual_model, routing_reason = select_model(
                 result.source_file.path,
                 result.source_file.size_bytes,
                 has_images=has_images,
                 model_override=config.get("model_override"),
             )
             prompt_version = "deep_v2" if result.depth == "deep" else "standard_v1"
+        # Use actual model for this file, not the config default
+        file_model = actual_model if actual_model != "free" else model
 
         # Build tags from frontmatter fields
         tag_input = {
@@ -323,7 +331,7 @@ def build_package(
             quality=result.quality,
             duration_min=result.duration_min,
             transcript_excerpt=result.transcript_excerpt,
-            model=model,
+            model=file_model,
             tokens_used=result.tokens_used,
             links_line=result.links_line,
             source_tool=result.source_tool,
