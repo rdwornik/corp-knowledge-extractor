@@ -31,7 +31,7 @@ ESCALATION_MODEL = "claude-sonnet-4-6"
 HAIKU_TOKEN_LIMIT = 190_000  # 200K context, leave 10K buffer
 
 
-def _has_anthropic_key() -> bool:
+def has_anthropic_key() -> bool:
     """Check if ANTHROPIC_API_KEY is available."""
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -42,7 +42,7 @@ def get_provider(model: str) -> ExtractionProvider:
     Falls back to Gemini if Anthropic key is missing.
     """
     if model in ANTHROPIC_MODELS:
-        if not _has_anthropic_key():
+        if not has_anthropic_key():
             logger.warning(
                 "ANTHROPIC_API_KEY not set — falling back to Gemini for model %s",
                 model,
@@ -138,7 +138,7 @@ def route_model(
         return DEFAULT_LARGE_CONTEXT_MODEL
 
     # No Anthropic key -> fall back to Gemini
-    if not _has_anthropic_key():
+    if not has_anthropic_key():
         logger.warning("ANTHROPIC_API_KEY not set — routing to Gemini")
         return DEFAULT_LARGE_CONTEXT_MODEL
 

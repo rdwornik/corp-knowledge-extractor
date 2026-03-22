@@ -36,7 +36,6 @@ from src.correlate import FileGroup
 from src.extract import ExtractionResult
 from src.inventory import FileType, SourceFile
 from src.post_process import generate_tags
-from src.providers.router import select_model
 from src.utils import parse_llm_json
 
 from src.transcript import TranscriptResult
@@ -283,27 +282,10 @@ def build_package(
     for stem, result in extracts.items():
         tmpl = env.get_template("extract.md.j2")
 
-        # Provenance metadata from extraction result (or compute if missing)
-        if result.routing_reason:
-            routing_reason = result.routing_reason
-            prompt_version = result.prompt_version
-            actual_model, _ = select_model(
-                result.source_file.path,
-                result.source_file.size_bytes,
-                has_images=bool(result.slides or result.slide_image_paths),
-                model_override=config.get("model_override"),
-            )
-        else:
-            has_images = bool(result.slides or result.slide_image_paths)
-            actual_model, routing_reason = select_model(
-                result.source_file.path,
-                result.source_file.size_bytes,
-                has_images=has_images,
-                model_override=config.get("model_override"),
-            )
-            prompt_version = "deep_v2" if result.depth == "deep" else "standard_v1"
-        # Use actual model for this file, not the config default
-        file_model = actual_model if actual_model != "free" else model
+        # Provenance metadata from extraction result
+        routing_reason = result.routing_reason or "unknown"
+        prompt_version = result.prompt_version
+        file_model = result.model_used or model
 
         # Build tags from frontmatter fields
         tag_input = {

@@ -93,6 +93,7 @@ class ExtractionResult:
     # Temp slide PNGs rendered from PDF (moved to output by run.py)
     slide_image_paths: list[Path] = field(default_factory=list)
     # Provenance metadata
+    model_used: str = ""
     routing_reason: str = ""
     prompt_version: str = "standard_v1"
     # Normalized output stem (set by build_package)
@@ -618,6 +619,7 @@ def extract_knowledge(
     result.gemini_file_uri = _gemini_file_uri
 
     # Provenance metadata
+    result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
 
@@ -872,6 +874,7 @@ def _try_pptx_pdf_multimodal(
         pass
 
     # Provenance metadata
+    result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
 
@@ -911,7 +914,7 @@ def extract_from_text(
     """
     from src.doc_type_classifier import classify_doc_type, should_extract_deep
     from src.deep_prompt import build_deep_prompt
-    from src.providers.router import route_model, get_provider, DEFAULT_LARGE_CONTEXT_MODEL, _has_anthropic_key
+    from src.providers.router import route_model, get_provider, DEFAULT_LARGE_CONTEXT_MODEL, has_anthropic_key
     from src.providers.base import ExtractionRequest
     from src.providers.validator import validate_and_retry
     from src.freshness import compute_freshness_fields
@@ -1031,12 +1034,13 @@ def extract_from_text(
     # Freshness tracking
     result.freshness = compute_freshness_fields(file.path)
 
-    # Provenance metadata
+    # Provenance metadata — response.model reflects escalation if it happened
+    result.model_used = response.model
     if model_override:
         result.routing_reason = "manual_override"
     elif batch_mode:
         result.routing_reason = "batch_discount"
-    elif model == DEFAULT_LARGE_CONTEXT_MODEL and not _has_anthropic_key():
+    elif model == DEFAULT_LARGE_CONTEXT_MODEL and not has_anthropic_key():
         result.routing_reason = "anthropic_key_missing"
     else:
         result.routing_reason = "text_default"
@@ -1183,6 +1187,7 @@ def extract_pptx_multimodal(
     result.freshness = compute_freshness_fields(file.path)
 
     # Provenance metadata
+    result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
 
