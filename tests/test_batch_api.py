@@ -50,7 +50,7 @@ def sample_entries(tmp_path, sample_text_result):
             tier=Tier.TEXT_AI,
             reason="good text extraction",
             estimated_cost=0.001,
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             text_result=sample_text_result,
         )
         files.append((entry, decision))
@@ -64,7 +64,7 @@ def mock_config():
             "extract": "Extract knowledge from this document. Return JSON.",
         },
         "anonymization": {"custom_terms": []},
-        "gemini": {"model": "gemini-2.5-flash"},
+        "gemini": {"model": "gemini-3-flash-preview"},
     }
 
 
@@ -131,7 +131,7 @@ class TestBuildBatchJsonl:
             ),
             (
                 ManifestEntry(id="tier3", path=p, doc_type="video", name="Video"),
-                TierDecision(tier=Tier.MULTIMODAL, reason="video", estimated_cost=0.03, model="gemini-2.5-flash"),
+                TierDecision(tier=Tier.MULTIMODAL, reason="video", estimated_cost=0.03, model="gemini-3-flash-preview"),
             ),
         ]
 
@@ -166,11 +166,11 @@ class TestSubmitBatchJob:
         mock_job.state.name = "JOB_STATE_PENDING"
         mock_client.batches.create.return_value = mock_job
 
-        result = submit_batch_job(mock_client, jsonl_path, "gemini-2.5-flash", "test-job")
+        result = submit_batch_job(mock_client, jsonl_path, "gemini-3-flash-preview", "test-job")
 
         mock_client.files.upload.assert_called_once()
         mock_client.batches.create.assert_called_once_with(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             src="files/abc123",
             config={"display_name": "test-job"},
         )

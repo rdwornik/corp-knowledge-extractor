@@ -169,7 +169,7 @@ def _run_synthesis(
         "and action items from the extracted data. Do not generalize — be specific."
     )
 
-    model = config.get("gemini", {}).get("model", "gemini-2.5-flash")
+    model = config.get("gemini", {}).get("model", "gemini-3-flash-preview")
     client = genai.Client(api_key=api_key)
 
     try:
@@ -265,7 +265,7 @@ def build_package(
 
     env = _get_jinja_env()
     now = datetime.now(timezone.utc)
-    model = config.get("gemini", {}).get("model", "gemini-2.5-flash")
+    model = config.get("gemini", {}).get("model", "gemini-3-flash-preview")
 
     # --- Copy source files ---
     all_files: list[SourceFile] = []

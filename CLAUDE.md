@@ -165,7 +165,7 @@ project: str             # from manifest
 6. **Cardinality caps** — max 8 topics, 4 products, 3 people, 3 domains per note
 7. **PPTX/XLSX/DOCX always Tier 2** — Gemini rejects these MIME types
 8. **corp_os_meta is shared source of truth** — taxonomy, normalization, validation, links
-9. **gemini-3-flash-preview** for all AI tiers (since 2026-03-12, fallback: gemini-2.5-flash)
+9. **gemini-3-flash-preview** for all AI tiers (since 2026-03-12)
 10. **tojson_raw** over Jinja2's tojson — preserve & characters in domain names
 
 ## API Keys

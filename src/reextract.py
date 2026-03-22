@@ -55,7 +55,7 @@ def reextract_package(package_path: Path, config: dict) -> None:
 
     # --- Archive existing extract ---
     now = datetime.now(timezone.utc)
-    model = config.get("gemini", {}).get("model", "gemini-2.5-flash")
+    model = config.get("gemini", {}).get("model", "gemini-3-flash-preview")
     archive_name = f"{now.strftime('%Y%m%d_%H%M%S')}_{model.replace('-', '_')}"
     history_dir = package_path / ".history" / archive_name
     history_dir.mkdir(parents=True, exist_ok=True)

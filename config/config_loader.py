@@ -39,7 +39,7 @@ def get(file: str, key: str = None, default: Any = None) -> Any:
         >>> get("processing", "frames.sample_rate")
         1
         >>> get("settings", "llm.model")
-        "gemini-2.5-flash"
+        "gemini-3-flash-preview"
         >>> get("categories", "order")
         ["infrastructure", "sla", "api", ...]
     """

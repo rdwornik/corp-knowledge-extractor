@@ -130,7 +130,7 @@ def submit_batch_job(
     Args:
         client: google.genai.Client instance
         jsonl_path: Path to JSONL input file
-        model: Gemini model name (e.g. "gemini-2.5-flash")
+        model: Gemini model name (e.g. "gemini-3-flash-preview")
         display_name: Human-readable job name
 
     Returns:
