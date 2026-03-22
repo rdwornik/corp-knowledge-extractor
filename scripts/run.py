@@ -530,7 +530,8 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
     from datetime import datetime as _dt
     extract_dir = pkg_path / "extract"
     for stem, result in extracts.items():
-        extract_json_path = extract_dir / f"{stem}.json"
+        json_stem = result.output_stem or stem
+        extract_json_path = extract_dir / f"{json_stem}.json"
         if custom_prompt:
             # Custom prompt: save raw Gemini JSON as-is (structure differs from standard)
             extract_data = {
@@ -541,7 +542,7 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
         else:
             extract_data = {
                 "schema_version": 2,
-                "id": stem,
+                "id": json_stem,
                 "source_file": str(result.source_file.path).replace('\\', '/'),
                 "title": result.title,
                 "summary": result.summary,
@@ -579,7 +580,7 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
     for stem, tr in transcripts.items():
         if stem in extracts:
             result = extracts[stem]
-            extraction_note_filename = f"{stem}.md"
+            extraction_note_filename = f"{result.output_stem or stem}.md"
             written = write_transcript_note(tr, result.title, extraction_note_filename, extract_dir)
             if written:
                 _print(f"  Transcript: {written.name}")

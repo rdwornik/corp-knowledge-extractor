@@ -283,15 +283,19 @@ def build_package(
     for stem, result in extracts.items():
         tmpl = env.get_template("extract.md.j2")
 
-        # Compute provenance metadata
-        has_images = bool(result.slides or result.slide_image_paths)
-        _sel_model, routing_reason = select_model(
-            result.source_file.path,
-            result.source_file.size_bytes,
-            has_images=has_images,
-            model_override=config.get("model_override"),
-        )
-        prompt_version = "deep_v2" if result.depth == "deep" else "standard_v1"
+        # Provenance metadata from extraction result (or compute if missing)
+        if result.routing_reason:
+            routing_reason = result.routing_reason
+            prompt_version = result.prompt_version
+        else:
+            has_images = bool(result.slides or result.slide_image_paths)
+            _sel_model, routing_reason = select_model(
+                result.source_file.path,
+                result.source_file.size_bytes,
+                has_images=has_images,
+                model_override=config.get("model_override"),
+            )
+            prompt_version = "deep_v2" if result.depth == "deep" else "standard_v1"
 
         # Build tags from frontmatter fields
         tag_input = {
@@ -354,7 +358,14 @@ def build_package(
             routing_reason=routing_reason,
             prompt_version=prompt_version,
         )
-        out_path = extract_dir / f"{stem}.md"
+        # Normalized output filename: {date}_{name}_{hash4}.md
+        extracted_at = (result.freshness or {}).get("extracted_at", now.isoformat())
+        source_hash = (result.freshness or {}).get("source_hash", "")
+        out_stem = normalize_output_filename(
+            result.source_file.path.name, extracted_at, source_hash,
+        )
+        result.output_stem = out_stem
+        out_path = extract_dir / f"{out_stem}.md"
         out_path.write_text(content, encoding="utf-8")
         log.info("Wrote %s", out_path.name)
 

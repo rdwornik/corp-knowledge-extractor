@@ -92,6 +92,11 @@ class ExtractionResult:
     gemini_file_uri: str | None = None
     # Temp slide PNGs rendered from PDF (moved to output by run.py)
     slide_image_paths: list[Path] = field(default_factory=list)
+    # Provenance metadata
+    routing_reason: str = ""
+    prompt_version: str = "standard_v1"
+    # Normalized output stem (set by build_package)
+    output_stem: str = ""
 
 
 class ExtractionError(Exception):
@@ -447,9 +452,20 @@ def extract_knowledge(
     from src.doc_type_classifier import classify_doc_type, should_extract_deep
     from src.deep_prompt import build_deep_multimodal_prompt
     from src.freshness import compute_freshness_fields
+    from src.providers.router import select_model
 
     client = _get_client(config)
-    model = _get_model(config)
+
+    # Policy-based model selection (overridable via --model flag)
+    model_override = config.get("model_override")
+    has_images = file.type in (FileType.VIDEO, FileType.SLIDES)
+    model, routing_reason = select_model(
+        file.path, file.size_bytes, has_images=has_images, model_override=model_override,
+    )
+    # "free" means Tier 1 — shouldn't reach here, but fall back to flash
+    if model == "free":
+        model = "gemini-3-flash-preview"
+        routing_reason = "tier3_fallback"
 
     INLINE_SIZE_LIMIT = 20 * 1024 * 1024  # 20MB
     _gemini_file_uri = None  # Track uploaded file URI for transcript reuse
@@ -601,8 +617,12 @@ def extract_knowledge(
     # Store Gemini file URI for transcript reuse
     result.gemini_file_uri = _gemini_file_uri
 
+    # Provenance metadata
+    result.routing_reason = routing_reason
+    result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+
     log.info(
-        "Extracted: '%s' | slides=%d | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d",
+        "Extracted: '%s' | slides=%d | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d | model=%s | routing=%s",
         result.title,
         len(result.slides),
         doc_type,
@@ -611,6 +631,8 @@ def extract_knowledge(
         len(raw_data.get("key_facts") or []),
         result.topics[:3],
         tokens,
+        model,
+        routing_reason,
     )
     return result
 
@@ -727,6 +749,7 @@ def _try_pptx_pdf_multimodal(
     from src.doc_type_classifier import classify_doc_type, should_extract_deep
     from src.deep_prompt import build_deep_multimodal_prompt
     from src.freshness import compute_freshness_fields
+    from src.providers.router import select_model
 
     # Convert PPTX to PDF
     import tempfile
@@ -739,7 +762,10 @@ def _try_pptx_pdf_multimodal(
     log.info("PPTX→PDF conversion succeeded for %s, sending PDF to Gemini multimodal", file.path.name)
 
     client = _get_client(config)
-    model = _get_model(config)
+    model_override = config.get("model_override")
+    model, routing_reason = select_model(
+        file.path, file.size_bytes, has_images=True, model_override=model_override,
+    )
 
     doc_type = classify_doc_type(str(file.path))
     use_deep = should_extract_deep(doc_type)
@@ -845,9 +871,13 @@ def _try_pptx_pdf_multimodal(
     except OSError:
         pass
 
+    # Provenance metadata
+    result.routing_reason = routing_reason
+    result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+
     log.info(
-        "PPTX PDF multimodal extracted: '%s' | doc_type=%s | deep=%s | tokens=%d",
-        result.title, doc_type, use_deep, tokens,
+        "PPTX PDF multimodal extracted: '%s' | doc_type=%s | deep=%s | tokens=%d | model=%s",
+        result.title, doc_type, use_deep, tokens, model,
     )
     return result
 
@@ -881,7 +911,7 @@ def extract_from_text(
     """
     from src.doc_type_classifier import classify_doc_type, should_extract_deep
     from src.deep_prompt import build_deep_prompt
-    from src.providers.router import route_model, get_provider
+    from src.providers.router import route_model, get_provider, DEFAULT_LARGE_CONTEXT_MODEL, _has_anthropic_key
     from src.providers.base import ExtractionRequest
     from src.providers.validator import validate_and_retry
     from src.freshness import compute_freshness_fields
@@ -1001,6 +1031,17 @@ def extract_from_text(
     # Freshness tracking
     result.freshness = compute_freshness_fields(file.path)
 
+    # Provenance metadata
+    if model_override:
+        result.routing_reason = "manual_override"
+    elif batch_mode:
+        result.routing_reason = "batch_discount"
+    elif model == DEFAULT_LARGE_CONTEXT_MODEL and not _has_anthropic_key():
+        result.routing_reason = "anthropic_key_missing"
+    else:
+        result.routing_reason = "text_default"
+    result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+
     log.info(
         "Tier 2 extracted: '%s' | model=%s | deep=%s | doc_type=%s | topics=%s | tokens=%d | cost=$%.6f",
         result.title,
@@ -1040,9 +1081,13 @@ def extract_pptx_multimodal(
     from src.doc_type_classifier import classify_doc_type, should_extract_deep
     from src.deep_prompt import build_deep_multimodal_prompt
     from src.freshness import compute_freshness_fields
+    from src.providers.router import select_model
 
     client = _get_client(config)
-    model = _get_model(config)
+    model_override = config.get("model_override")
+    model, routing_reason = select_model(
+        file.path, file.size_bytes, has_images=True, model_override=model_override,
+    )
 
     # --- Classify doc type BEFORE Gemini call ---
     doc_type = classify_doc_type(str(file.path))
@@ -1137,8 +1182,12 @@ def extract_pptx_multimodal(
     # Freshness tracking
     result.freshness = compute_freshness_fields(file.path)
 
+    # Provenance metadata
+    result.routing_reason = routing_reason
+    result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+
     log.info(
-        "PPTX multimodal extracted: '%s' | %d slides | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d",
+        "PPTX multimodal extracted: '%s' | %d slides | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d | model=%s",
         result.title,
         len(result.slides),
         doc_type,
@@ -1147,6 +1196,7 @@ def extract_pptx_multimodal(
         len(raw_data.get("key_facts") or []),
         result.topics[:3],
         tokens,
+        model,
     )
     return result
 
