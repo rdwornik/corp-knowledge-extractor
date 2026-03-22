@@ -266,7 +266,8 @@ def cli(ctx):
 @click.option("--dry-run-tiers", is_flag=True, help="Show tier routing + cost estimate without processing")
 @click.option("--prompt-file", type=click.Path(exists=True), default=None,
               help="Custom extraction prompt file (replaces default prompt)")
-@click.option("--model", default=None, help="Override Gemini model (default from settings.yaml)")
+@click.option("--model", type=click.Choice(["flash", "pro"], case_sensitive=False), default=None,
+              help="Override LLM model. 'pro' uses Gemini 3.1 Pro for highest quality extraction.")
 @click.option("--no-compress", is_flag=True, help="Skip FFmpeg compression (fast testing; may cause h264 decode errors)")
 @click.option("--force", is_flag=True, help="Force re-extraction even if output exists with matching hash")
 def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None, no_compress: bool, force: bool):
@@ -279,8 +280,12 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
     """
     config = load_config()
 
+    MODEL_MAP = {"flash": "gemini-3-flash-preview", "pro": "gemini-3.1-pro-preview"}
     if model:
-        config["model_override"] = model
+        resolved = MODEL_MAP[model]
+        config["model_override"] = resolved
+        if model == "pro":
+            log.info("Using Gemini 3.1 Pro for high-quality extraction")
 
     # Read custom prompt if provided
     custom_prompt = None
@@ -601,7 +606,8 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
               help="Seconds between batch status checks")
 @click.option("--batch-timeout", default=86400, show_default=True,
               help="Max seconds to wait for batch completion")
-@click.option("--model", default=None, help="Override Gemini model (default from settings.yaml)")
+@click.option("--model", type=click.Choice(["flash", "pro"], case_sensitive=False), default=None,
+              help="Override LLM model. 'pro' uses Gemini 3.1 Pro for highest quality extraction.")
 def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int | None,
                      batch: bool, batch_poll_interval: int, batch_timeout: int, model: str | None):
     """Process multiple files from a JSON manifest.
@@ -623,8 +629,9 @@ def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int |
     from src.manifest import Manifest
 
     config = load_config()
+    MODEL_MAP = {"flash": "gemini-3-flash-preview", "pro": "gemini-3.1-pro-preview"}
     if model:
-        config["model_override"] = model
+        config["model_override"] = MODEL_MAP[model]
     manifest = Manifest.from_file(Path(manifest_path))
 
     mode_label = "[bold]Batch API[/bold]" if batch else "[bold]Sequential[/bold]"
