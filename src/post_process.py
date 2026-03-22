@@ -150,6 +150,45 @@ def post_process_extraction(
     )
 
 
+def _normalize_tag(value: str) -> str:
+    """Normalize tag value: lowercase, hyphens, strip special chars."""
+    tag = value.lower()
+    tag = tag.replace("&", "").replace("_", "-").replace(" ", "-")
+    tag = re.sub(r'[^a-z0-9\-/]', '', tag)
+    tag = re.sub(r'-+', '-', tag).strip('-')
+    return tag
+
+
+def generate_tags(frontmatter: dict) -> list[str]:
+    """Generate hierarchical tags from frontmatter fields."""
+    tags = []
+
+    for product in (frontmatter.get("products") or []):
+        tags.append(f"product/{_normalize_tag(product)}")
+
+    for topic in (frontmatter.get("topics") or []):
+        tags.append(f"topic/{_normalize_tag(topic)}")
+
+    for domain in (frontmatter.get("domains") or []):
+        tags.append(f"domain/{_normalize_tag(domain)}")
+
+    client = frontmatter.get("client")
+    if client:
+        tags.append(f"client/{_normalize_tag(client)}")
+
+    doc_type = frontmatter.get("doc_type")
+    if doc_type:
+        tags.append(f"type/{_normalize_tag(doc_type)}")
+
+    source_type = frontmatter.get("source_type")
+    if source_type:
+        tags.append(f"source/{_normalize_tag(source_type)}")
+
+    # Deduplicate preserving order
+    seen = set()
+    return [t for t in tags if not (t in seen or seen.add(t))]
+
+
 def _log_unknown_terms(terms: list[str]):
     """Append unknown terms to local review file for batch approval."""
     review_path = Path(__file__).parent.parent / "config" / "taxonomy_review.yaml"

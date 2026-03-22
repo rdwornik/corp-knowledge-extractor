@@ -18,7 +18,9 @@ authority: "{{ authority | default('tribal') }}"
 quality: "{{ quality }}"
 {% if duration_min %}duration_min: {{ duration_min }}
 {% endif %}model: "{{ model }}"
-tokens_used: {{ tokens_used }}
+{% if routing_reason %}routing_reason: "{{ routing_reason }}"
+{% endif %}{% if prompt_version %}prompt_version: "{{ prompt_version }}"
+{% endif %}tokens_used: {{ tokens_used }}
 source_tool: "{{ source_tool | default('knowledge-extractor') }}"
 schema_version: 2
 extraction_version: {{ extraction_version | default(1) }}
@@ -30,6 +32,7 @@ depth: "{{ depth | default('standard') }}"
 source_hash: "{{ freshness.source_hash }}"
 source_mtime: "{{ freshness.source_mtime }}"
 extracted_at: "{{ freshness.extracted_at }}"
+{% endif %}{% if tags %}tags: {{ tags | tojson_raw }}
 {% endif %}{% if overlay and doc_type %}{{ doc_type }}_overlay: {{ overlay | tojson_raw }}
 {% endif %}---
 

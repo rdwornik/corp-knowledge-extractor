@@ -61,6 +61,42 @@ def get_provider(model: str) -> ExtractionProvider:
         raise ValueError(f"Unknown model: {model}. Known: {ANTHROPIC_MODELS | GEMINI_MODELS}")
 
 
+def select_model(
+    file_path: Path,
+    file_size: int,
+    has_images: bool = False,
+    model_override: str | None = None,
+) -> tuple[str, str]:
+    """Auto-select LLM model based on file type and content.
+
+    Args:
+        file_path: Path to the source file
+        file_size: File size in bytes
+        has_images: Whether the file contains images (relevant for PDFs)
+        model_override: Explicit model from --model flag (takes precedence)
+
+    Returns:
+        Tuple of (model_name, routing_reason)
+    """
+    if model_override:
+        MODEL_MAP = {"pro": "gemini-3.1-pro-preview", "flash": "gemini-3-flash-preview"}
+        resolved = MODEL_MAP.get(model_override, model_override)
+        return resolved, "manual_override"
+
+    ext = file_path.suffix.lower()
+
+    if file_size < 5000:
+        return "free", "small_file_local"
+
+    if ext in (".pptx", ".mp4", ".mkv", ".avi", ".mov", ".wav"):
+        return "gemini-3.1-pro-preview", "pptx_multimodal" if ext == ".pptx" else "video_multimodal"
+
+    if ext == ".pdf" and has_images:
+        return "gemini-3.1-pro-preview", "pdf_with_images"
+
+    return "gemini-3-flash-preview", "text_default"
+
+
 def route_model(
     tier: int,
     text_length: int = 0,

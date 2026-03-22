@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,8 @@ from src.compress import compress_video, needs_compression
 from src.correlate import FileGroup
 from src.extract import ExtractionResult
 from src.inventory import FileType, SourceFile
+from src.post_process import generate_tags
+from src.providers.router import select_model
 from src.utils import parse_llm_json
 
 from src.transcript import TranscriptResult
@@ -59,6 +62,24 @@ _SOURCE_SUBDIR = {
 def _tojson_raw(value):
     """JSON serialize without HTML entity escaping."""
     return json.dumps(value, ensure_ascii=False)
+
+
+def normalize_output_filename(source_filename: str, extracted_at: str, source_hash: str) -> str:
+    """Generate normalized output filename.
+
+    Format: {date}_{normalized_name}_{hash4}
+    Example: 2026-03-22_sgdbf_architectural_requirements_a7b2
+    """
+    date = extracted_at[:10] if extracted_at else datetime.now().strftime("%Y-%m-%d")
+
+    stem = Path(source_filename).stem.lower()
+    stem = re.sub(r'[^a-z0-9\s]', '', stem)
+    stem = re.sub(r'\s+', '_', stem).strip('_')
+    stem = stem[:64]
+
+    hash4 = source_hash[:4] if source_hash else "0000"
+
+    return f"{date}_{stem}_{hash4}"
 
 
 def _get_jinja_env() -> Environment:
@@ -261,6 +282,28 @@ def build_package(
     # --- Write per-file extract markdown ---
     for stem, result in extracts.items():
         tmpl = env.get_template("extract.md.j2")
+
+        # Compute provenance metadata
+        has_images = bool(result.slides or result.slide_image_paths)
+        _sel_model, routing_reason = select_model(
+            result.source_file.path,
+            result.source_file.size_bytes,
+            has_images=has_images,
+            model_override=config.get("model_override"),
+        )
+        prompt_version = "deep_v2" if result.depth == "deep" else "standard_v1"
+
+        # Build tags from frontmatter fields
+        tag_input = {
+            "products": result.products,
+            "topics": result.topics,
+            "domains": result.domains,
+            "client": result.client,
+            "doc_type": result.doc_type,
+            "source_type": result.source_type,
+        }
+        tags = generate_tags(tag_input)
+
         content = tmpl.render(
             source_file=str(result.source_file.path).replace("\\", "/"),
             content_type=result.content_type,
@@ -305,6 +348,11 @@ def build_package(
                 if f.get("verification_status") in ("flagged_mismatch", "unverified")
                 and f.get("anomalies")
             ],
+            # Tags
+            tags=tags,
+            # Provenance
+            routing_reason=routing_reason,
+            prompt_version=prompt_version,
         )
         out_path = extract_dir / f"{stem}.md"
         out_path.write_text(content, encoding="utf-8")
