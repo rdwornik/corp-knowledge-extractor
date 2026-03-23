@@ -81,6 +81,38 @@ def normalize_output_filename(source_filename: str, extracted_at: str, source_ha
     return f"{date}_{stem}_{hash4}"
 
 
+def compute_quality_score(
+    key_facts: list,
+    facts_with_status: list[dict],
+    overlay_fields_populated: int,
+    content_chars: int,
+    entities_count: int,
+) -> int:
+    """Compute 0-100 quality score for frontmatter."""
+    score = 0
+
+    # Facts: max 30
+    specific_facts = [f for f in key_facts if len(str(f)) >= 30]
+    score += min(30, len(specific_facts) * 2)
+
+    # Verification: max 20
+    if facts_with_status:
+        verified = sum(1 for f in facts_with_status if f.get("verification_status") == "verified")
+        ratio = verified / len(facts_with_status) if facts_with_status else 0
+        score += int(min(20, ratio * 20))
+
+    # Overlay: max 20
+    score += min(20, overlay_fields_populated * 4)
+
+    # Content depth: max 15
+    score += min(15, int(content_chars / 1000 * 3))
+
+    # Entities: max 15
+    score += min(15, entities_count * 3)
+
+    return min(100, score)
+
+
 def _get_jinja_env() -> Environment:
     templates_dir = Path(__file__).parent.parent / "templates"
     env = Environment(
@@ -298,6 +330,19 @@ def build_package(
         }
         tags = generate_tags(tag_input)
 
+        # Compute quality score from assembled data
+        _key_facts = result.raw_json.get("key_facts") or []
+        _entities = result.raw_json.get("entities_mentioned") or []
+        _overlay_fields = len(result.overlay) if result.overlay else 0
+        _content_chars = len(result.summary or "") + sum(len(p) for p in result.key_points)
+        quality_score = compute_quality_score(
+            key_facts=_key_facts,
+            facts_with_status=result.facts,
+            overlay_fields_populated=_overlay_fields,
+            content_chars=_content_chars,
+            entities_count=len(_entities),
+        )
+
         content = tmpl.render(
             source_file=str(result.source_file.path).replace("\\", "/"),
             content_type=result.content_type,
@@ -344,7 +389,8 @@ def build_package(
             ],
             # Tags
             tags=tags,
-            # Provenance
+            # Quality + Provenance
+            quality_score=quality_score,
             routing_reason=routing_reason,
             prompt_version=prompt_version,
         )

@@ -21,7 +21,8 @@ quality: "{{ quality }}"
 {% if routing_reason %}routing_reason: "{{ routing_reason }}"
 {% endif %}{% if prompt_version %}prompt_version: "{{ prompt_version }}"
 {% endif %}tokens_used: {{ tokens_used }}
-source_tool: "{{ source_tool | default('knowledge-extractor') }}"
+{% if quality_score is defined %}quality_score: {{ quality_score }}
+{% endif %}source_tool: "{{ source_tool | default('knowledge-extractor') }}"
 schema_version: 2
 extraction_version: {{ extraction_version | default(1) }}
 depth: "{{ depth | default('standard') }}"
