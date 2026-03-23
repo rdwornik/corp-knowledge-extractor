@@ -308,11 +308,13 @@ class BatchJobRunner:
         config: dict,
         force_tier: int | None = None,
         resume: bool = False,
+        force: bool = False,
     ):
         self.manifest = manifest
         self.config = config
         self.force_tier = force_tier
         self.resume = resume
+        self.force = force
         self.statuses: dict[str, dict] = {}
 
     def run(
@@ -355,7 +357,7 @@ class BatchJobRunner:
         tier3_entries: list[tuple[ManifestEntry, TierDecision, SourceFile]] = []
 
         for entry in self.manifest.files:
-            if self.resume and existing_status.get(entry.id) == FileStatus.DONE:
+            if self.resume and not self.force and existing_status.get(entry.id) == FileStatus.DONE:
                 logger.info("Skipping (already done): %s", entry.name)
                 self.statuses[entry.id] = {
                     "status": FileStatus.DONE.value,

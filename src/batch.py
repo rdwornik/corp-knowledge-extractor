@@ -32,13 +32,15 @@ class BatchProcessor:
     """Process a manifest of files through the extraction pipeline."""
 
     def __init__(
-        self, manifest: Manifest, config: dict, max_rpm: int = 100, resume: bool = False, force_tier: int | None = None
+        self, manifest: Manifest, config: dict, max_rpm: int = 100, resume: bool = False,
+        force_tier: int | None = None, force: bool = False,
     ):
         self.manifest = manifest
         self.config = config
         self.max_rpm = max_rpm
         self.resume = resume
         self.force_tier = force_tier
+        self.force = force
         self.statuses: dict[str, dict] = {}
         self._last_request_time = 0.0
         self._min_interval = 60.0 / max_rpm
@@ -74,8 +76,8 @@ class BatchProcessor:
         for i, entry in enumerate(self.manifest.files, 1):
             logger.info("[%d/%d] Processing: %s", i, summary["total"], entry.name)
 
-            # Skip if already done (resume mode)
-            if self.resume and existing_status.get(entry.id) == FileStatus.DONE:
+            # Skip if already done (resume mode) — force overrides
+            if self.resume and not self.force and existing_status.get(entry.id) == FileStatus.DONE:
                 logger.info("  Skipping (already done): %s", entry.name)
                 self.statuses[entry.id] = {
                     "status": FileStatus.DONE.value,

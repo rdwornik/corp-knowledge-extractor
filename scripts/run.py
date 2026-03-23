@@ -610,8 +610,10 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
               help="Max seconds to wait for batch completion")
 @click.option("--model", type=click.Choice(["flash", "pro"], case_sensitive=False), default=None,
               help="Override LLM model. 'pro' uses Gemini 3.1 Pro for highest quality extraction.")
+@click.option("--force", is_flag=True, help="Force re-extraction even if files are already done (overrides --resume)")
 def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int | None,
-                     batch: bool, batch_poll_interval: int, batch_timeout: int, model: str | None):
+                     batch: bool, batch_poll_interval: int, batch_timeout: int, model: str | None,
+                     force: bool):
     """Process multiple files from a JSON manifest.
 
     Used by corp-project-extractor for batch extraction.
@@ -652,11 +654,11 @@ def process_manifest(manifest_path: str, resume: bool, max_rpm: int, tier: int |
 
     if batch:
         from src.batch_api import BatchJobRunner
-        runner = BatchJobRunner(manifest, config, force_tier=tier, resume=resume)
+        runner = BatchJobRunner(manifest, config, force_tier=tier, resume=resume, force=force)
         summary = runner.run(poll_interval=batch_poll_interval, timeout=batch_timeout)
     else:
         from src.batch import BatchProcessor
-        processor = BatchProcessor(manifest, config, max_rpm=max_rpm, resume=resume, force_tier=tier)
+        processor = BatchProcessor(manifest, config, max_rpm=max_rpm, resume=resume, force_tier=tier, force=force)
         summary = processor.process_all()
 
     _print("")
