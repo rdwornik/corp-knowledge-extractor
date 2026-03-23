@@ -28,6 +28,7 @@ from src.extract import (
     _get_client,
     _get_model,
     _get_prompt,
+    _prepend_user_context,
     _result_from_json,
     ExtractionResult,
     ExtractionError,
@@ -95,7 +96,8 @@ def build_batch_jsonl(
                 continue
 
             text_content = decision.text_result.text[:80000]
-            full_prompt = f"{prompt}\n\n--- FILE CONTENT ({decision.text_result.extractor}) ---\n{text_content}"
+            entry_prompt = _prepend_user_context(prompt, entry.user_context)
+            full_prompt = f"{entry_prompt}\n\n--- FILE CONTENT ({decision.text_result.extractor}) ---\n{text_content}"
 
             line = {
                 "key": entry.id,
@@ -488,7 +490,7 @@ class BatchJobRunner:
                     temp_dir = pkg_dir / "temp_frames" / source_file.name
                     sampled_frames = sample_frames(source_file.path, temp_dir, self.config)
 
-                result = extract_knowledge(source_file, self.config, sampled_frames=sampled_frames)
+                result = extract_knowledge(source_file, self.config, sampled_frames=sampled_frames, user_context=entry.user_context)
 
                 # Keep slide frames
                 if result.slides and sampled_frames:

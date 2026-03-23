@@ -204,14 +204,14 @@ class BatchProcessor:
         if decision.tier == Tier.LOCAL and decision.text_result:
             result = extract_local(source_file, decision.text_result)
         elif decision.tier == Tier.TEXT_AI and decision.text_result:
-            result = extract_from_text(source_file, self.config, decision.text_result)
+            result = extract_from_text(source_file, self.config, decision.text_result, user_context=entry.user_context)
         elif source_file.path.suffix.lower() == ".pptx" and decision.tier == Tier.MULTIMODAL:
             # PPTX multimodal: render slides as PNG, send to Gemini
             from src.slides.renderer import render_slides
 
             temp_slides_dir = pkg_dir / "temp_slides" / source_file.name
             rendered = render_slides(source_file.path, temp_slides_dir)
-            result = extract_pptx_multimodal(source_file, self.config, rendered)
+            result = extract_pptx_multimodal(source_file, self.config, rendered, user_context=entry.user_context)
             # Keep rendered slides
             slides_dir = pkg_dir / "source" / "slides"
             slides_dir.mkdir(parents=True, exist_ok=True)
@@ -220,7 +220,7 @@ class BatchProcessor:
                     shutil.copy2(rs.image_path, slides_dir / rs.image_path.name)
                     rs.image_path.unlink()
         else:
-            result = extract_knowledge(source_file, self.config, sampled_frames=sampled_frames)
+            result = extract_knowledge(source_file, self.config, sampled_frames=sampled_frames, user_context=entry.user_context)
 
         # Keep slide frames, cleanup temp
         if result.slides and sampled_frames:

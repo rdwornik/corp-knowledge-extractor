@@ -270,7 +270,8 @@ def cli(ctx):
               help="Override LLM model. 'pro' uses Gemini 3.1 Pro for highest quality extraction.")
 @click.option("--no-compress", is_flag=True, help="Skip FFmpeg compression (fast testing; may cause h264 decode errors)")
 @click.option("--force", is_flag=True, help="Force re-extraction even if output exists with matching hash")
-def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None, no_compress: bool, force: bool):
+@click.option("--context", default="", help="Additional context for extraction (e.g., 'JLR TMS RFP response')")
+def process(input_path: str | None, output: str, name: str | None, tier: int | None, dry_run_tiers: bool, prompt_file: str | None, model: str | None, no_compress: bool, force: bool, context: str):
     """Process a file or folder into a knowledge package.
 
     INPUT_PATH defaults to the data/input/ directory from config if not given.
@@ -429,7 +430,7 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
             if decision.tier == Tier.LOCAL and decision.text_result:
                 result = extract_local(f, decision.text_result)
             elif decision.tier == Tier.TEXT_AI and decision.text_result:
-                result = extract_from_text(f, config, decision.text_result, custom_prompt=custom_prompt)
+                result = extract_from_text(f, config, decision.text_result, custom_prompt=custom_prompt, user_context=context)
             elif f.path.suffix.lower() == ".pptx" and decision.tier == Tier.MULTIMODAL:
                 # PPTX multimodal: render slides as PNG, send to Gemini
                 from src.slides.renderer import render_slides
@@ -437,9 +438,9 @@ def process(input_path: str | None, output: str, name: str | None, tier: int | N
                 rendered = render_slides(f.path, temp_slides_dir)
                 rendered_pptx_slides[f.name] = rendered
                 _print(f"    Rendered {len(rendered)} slide images")
-                result = extract_pptx_multimodal(f, config, rendered, custom_prompt=custom_prompt)
+                result = extract_pptx_multimodal(f, config, rendered, custom_prompt=custom_prompt, user_context=context)
             else:
-                result = extract_knowledge(f, config, sampled_frames=frames, custom_prompt=custom_prompt)
+                result = extract_knowledge(f, config, sampled_frames=frames, custom_prompt=custom_prompt, user_context=context)
             extracts[f.name] = result
             cost_total += decision.estimated_cost
             slide_info = f" | {len(result.slides)} slides identified" if result.slides else ""

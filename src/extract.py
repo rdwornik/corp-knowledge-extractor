@@ -96,6 +96,8 @@ class ExtractionResult:
     model_used: str = ""
     routing_reason: str = ""
     prompt_version: str = "standard_v1"
+    # User-provided context (from manifest or --context flag)
+    user_context: str = ""
     # Normalized output stem (set by build_package)
     output_stem: str = ""
 
@@ -121,6 +123,17 @@ def _get_client(config: dict):
 
 def _get_model(config: dict) -> str:
     return config.get("model_override") or config.get("gemini", {}).get("model", "gemini-3-flash-preview")
+
+
+def _prepend_user_context(prompt: str, user_context: str) -> str:
+    """Prepend user context to a prompt if provided."""
+    if not user_context:
+        return prompt
+    return (
+        f"ADDITIONAL CONTEXT FROM USER:\n{user_context}\n\n"
+        f"Use this context to guide your extraction — prioritize facts relevant to this context.\n\n"
+        f"{prompt}"
+    )
 
 
 def _get_prompt(config: dict, prompt_name: str, custom_prompt: str | None = None) -> str:
@@ -426,6 +439,7 @@ def extract_knowledge(
     config: dict,
     sampled_frames: list[SampledFrame] | None = None,
     custom_prompt: str | None = None,
+    user_context: str = "",
 ) -> ExtractionResult:
     """
     Send a file to Gemini and return structured extracted knowledge.
@@ -495,7 +509,7 @@ def extract_knowledge(
             # Unified deep multimodal prompt — single prompt with per-slide + structured output
             deep_prompt = build_deep_multimodal_prompt(doc_type)
             taxonomy = get_taxonomy_for_prompt()
-            unified_prompt = f"{deep_prompt}\n\n{taxonomy}"
+            unified_prompt = _prepend_user_context(f"{deep_prompt}\n\n{taxonomy}", user_context)
 
             # Upload video, add frames, append unified prompt (no system_instruction)
             uploaded = _upload_and_wait(client, file.path, config)
@@ -518,7 +532,7 @@ def extract_knowledge(
 
     elif file.type in (FileType.VIDEO, FileType.AUDIO):
         log.info("Extracting %s (no frames)...", file.path.name)
-        prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
+        prompt = _prepend_user_context(_get_prompt(config, "extract", custom_prompt=custom_prompt), user_context)
         uploaded = _upload_and_wait(client, file.path, config)
         _gemini_file_uri = uploaded.uri
         contents = [
@@ -528,7 +542,7 @@ def extract_knowledge(
 
     elif file.type in (FileType.DOCUMENT, FileType.SLIDES):
         log.info("Extracting %s (%s)...", file.path.name, file.type.value)
-        prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
+        prompt = _prepend_user_context(_get_prompt(config, "extract", custom_prompt=custom_prompt), user_context)
         if file.size_bytes > INLINE_SIZE_LIMIT:
             uploaded = _upload_and_wait(client, file.path, config)
             contents = [
@@ -544,7 +558,7 @@ def extract_knowledge(
 
     elif file.type in (FileType.NOTE, FileType.TRANSCRIPT, FileType.SPREADSHEET):
         log.info("Extracting %s (text)...", file.path.name)
-        prompt = _get_prompt(config, "extract", custom_prompt=custom_prompt)
+        prompt = _prepend_user_context(_get_prompt(config, "extract", custom_prompt=custom_prompt), user_context)
         try:
             text_content = file.path.read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
@@ -622,6 +636,7 @@ def extract_knowledge(
     result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.user_context = user_context
 
     log.info(
         "Extracted: '%s' | slides=%d | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d | model=%s | routing=%s",
@@ -740,6 +755,7 @@ def _try_pptx_pdf_multimodal(
     file: SourceFile,
     config: dict,
     text_result: TextExtractionResult,
+    user_context: str = "",
 ) -> ExtractionResult | None:
     """Attempt PPTX→PDF conversion and Gemini multimodal extraction.
 
@@ -776,9 +792,9 @@ def _try_pptx_pdf_multimodal(
     if use_deep:
         deep_prompt = build_deep_multimodal_prompt(doc_type)
         taxonomy = get_taxonomy_for_prompt()
-        prompt = f"{deep_prompt}\n\n{taxonomy}"
+        prompt = _prepend_user_context(f"{deep_prompt}\n\n{taxonomy}", user_context)
     else:
-        prompt = _get_prompt(config, "extract")
+        prompt = _prepend_user_context(_get_prompt(config, "extract"), user_context)
 
     # Include text grounding from python-pptx
     text_grounding = text_result.text[:30000] if text_result.text else ""
@@ -877,6 +893,7 @@ def _try_pptx_pdf_multimodal(
     result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.user_context = user_context
 
     log.info(
         "PPTX PDF multimodal extracted: '%s' | doc_type=%s | deep=%s | tokens=%d | model=%s",
@@ -890,6 +907,7 @@ def extract_from_text(
     config: dict,
     text_result: TextExtractionResult,
     custom_prompt: str | None = None,
+    user_context: str = "",
 ) -> ExtractionResult:
     """
     Tier 2: Send pre-extracted text to AI provider (Claude Haiku or Gemini).
@@ -922,7 +940,7 @@ def extract_from_text(
     # For PPTX: attempt PDF conversion for multimodal extraction
     if file.path.suffix.lower() == ".pptx" and custom_prompt is None:
         try:
-            result = _try_pptx_pdf_multimodal(file, config, text_result)
+            result = _try_pptx_pdf_multimodal(file, config, text_result, user_context=user_context)
             if result is not None:
                 return result
         except Exception as exc:
@@ -957,16 +975,25 @@ def extract_from_text(
     # --- Build prompt ---
     if custom_prompt:
         system_prompt = ""
-        user_prompt = f"{custom_prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
+        user_prompt = _prepend_user_context(
+            f"{custom_prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}",
+            user_context,
+        )
     elif use_deep:
         deep_prompt = build_deep_prompt(doc_type)
         taxonomy = get_taxonomy_for_prompt()
         system_prompt = "You are a structured knowledge extraction engine for a pre-sales knowledge base."
-        user_prompt = f"{deep_prompt}\n\n{taxonomy}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
+        user_prompt = _prepend_user_context(
+            f"{deep_prompt}\n\n{taxonomy}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}",
+            user_context,
+        )
     else:
         prompt = _get_prompt(config, "extract")
         system_prompt = ""
-        user_prompt = f"{prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}"
+        user_prompt = _prepend_user_context(
+            f"{prompt}\n\n--- FILE CONTENT ({text_result.extractor}) ---\n{text_content}",
+            user_context,
+        )
 
     # --- Compute dynamic token budget ---
     slide_count = text_result.slide_count or 0
@@ -1045,6 +1072,7 @@ def extract_from_text(
     else:
         result.routing_reason = "text_default"
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.user_context = user_context
 
     log.info(
         "Tier 2 extracted: '%s' | model=%s | deep=%s | doc_type=%s | topics=%s | tokens=%d | cost=$%.6f",
@@ -1064,6 +1092,7 @@ def extract_pptx_multimodal(
     config: dict,
     rendered_slides: list,
     custom_prompt: str | None = None,
+    user_context: str = "",
 ) -> ExtractionResult:
     """
     Tier 3 for PPTX: Send rendered slide PNGs to Gemini multimodal.
@@ -1101,9 +1130,11 @@ def extract_pptx_multimodal(
     if use_deep:
         deep_prompt = build_deep_multimodal_prompt(doc_type)
         taxonomy = get_taxonomy_for_prompt()
-        prompt = f"{deep_prompt}\n\n{taxonomy}"
+        prompt = _prepend_user_context(f"{deep_prompt}\n\n{taxonomy}", user_context)
     else:
-        prompt = _get_prompt(config, "extract_pptx_slides", custom_prompt=custom_prompt)
+        prompt = _prepend_user_context(
+            _get_prompt(config, "extract_pptx_slides", custom_prompt=custom_prompt), user_context
+        )
 
     log.info(
         "Extracting %s via PPTX multimodal (%d slides, doc_type=%s, deep=%s)...",
@@ -1190,6 +1221,7 @@ def extract_pptx_multimodal(
     result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.user_context = user_context
 
     log.info(
         "PPTX multimodal extracted: '%s' | %d slides | doc_type=%s | deep=%s | overlay=%s | key_facts=%d | topics=%s | tokens=%d | model=%s",

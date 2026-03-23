@@ -27,6 +27,7 @@ class ManifestEntry:
     name: str
     client: str | None = None
     project: str | None = None
+    user_context: str = ""
     status: FileStatus = FileStatus.PENDING
     error: str | None = None
 
@@ -58,6 +59,7 @@ class Manifest:
                     name=entry.get("name", entry["id"]),
                     client=entry.get("client"),
                     project=entry.get("project"),
+                    user_context=entry.get("user_context", ""),
                 )
             )
 
