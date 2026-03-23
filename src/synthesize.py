@@ -389,8 +389,9 @@ def build_package(
             ],
             # Tags
             tags=tags,
-            # Quality + Provenance
+            # Quality + Cost + Provenance
             quality_score=quality_score,
+            extraction_cost_usd=result.extraction_cost_usd,
             routing_reason=routing_reason,
             prompt_version=prompt_version,
         )

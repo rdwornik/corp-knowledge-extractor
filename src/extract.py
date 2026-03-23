@@ -96,6 +96,7 @@ class ExtractionResult:
     model_used: str = ""
     routing_reason: str = ""
     prompt_version: str = "standard_v1"
+    extraction_cost_usd: float = 0.0
     # User-provided context (from manifest or --context flag)
     user_context: str = ""
     # Normalized output stem (set by build_package)
@@ -123,6 +124,20 @@ def _get_client(config: dict):
 
 def _get_model(config: dict) -> str:
     return config.get("model_override") or config.get("gemini", {}).get("model", "gemini-3-flash-preview")
+
+
+def _estimate_gemini_cost(model: str, total_tokens: int) -> float:
+    """Estimate cost for a Gemini call from total token count.
+
+    Uses a blended rate (input-heavy assumption: ~80% input, ~20% output).
+    """
+    rates = {
+        "gemini-3-flash-preview": 1.00,     # blended $/1M tokens
+        "gemini-3.1-flash-lite": 0.50,
+        "gemini-3.1-pro-preview": 4.00,
+    }
+    rate = rates.get(model, 1.00)
+    return round(total_tokens * rate / 1_000_000, 6)
 
 
 def _prepend_user_context(prompt: str, user_context: str) -> str:
@@ -636,6 +651,7 @@ def extract_knowledge(
     result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.extraction_cost_usd = _estimate_gemini_cost(model, tokens)
     result.user_context = user_context
 
     log.info(
@@ -893,6 +909,7 @@ def _try_pptx_pdf_multimodal(
     result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.extraction_cost_usd = _estimate_gemini_cost(model, tokens)
     result.user_context = user_context
 
     log.info(
@@ -1072,6 +1089,7 @@ def extract_from_text(
     else:
         result.routing_reason = "text_default"
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.extraction_cost_usd = response.cost_estimate
     result.user_context = user_context
 
     log.info(
@@ -1221,6 +1239,7 @@ def extract_pptx_multimodal(
     result.model_used = model
     result.routing_reason = routing_reason
     result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.extraction_cost_usd = _estimate_gemini_cost(model, tokens)
     result.user_context = user_context
 
     log.info(
