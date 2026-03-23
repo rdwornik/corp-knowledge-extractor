@@ -45,11 +45,12 @@ extracted_at: "{{ freshness.extracted_at }}"
 {{ summary }}
 
 {% if slides %}
+{% set section_label = "Section" if source_file.endswith(".pdf") or source_file.endswith(".docx") else "Slide" %}
 {% for slide in slides %}
-## Slide {{ slide.slide_number }}: {{ slide.slide_title }}
+## {{ section_label }} {{ slide.slide_number }}: {{ slide.slide_title }}
 *{{ slide.timestamp_approx }}*
 
-![Slide {{ slide.slide_number }}](../source/{{ slides_subdir | default('frames') }}/slide_{{ "%03d" | format(slide.slide_number) }}.png)
+![{{ section_label }} {{ slide.slide_number }}](../source/{{ slides_subdir | default('frames') }}/slide_{{ "%03d" | format(slide.slide_number) }}.png)
 
 {{ slide.speaker_insight }}
 
@@ -73,8 +74,9 @@ extracted_at: "{{ freshness.extracted_at }}"
 {% endif %}
 
 {% if slide_summaries %}
+{% set section_label2 = "Section" if source_file.endswith(".pdf") or source_file.endswith(".docx") else "Slide" %}
 {% for slide in slide_summaries %}
-## Slide {{ slide.slide_number }}: {{ slide.title }}
+## {{ section_label2 }} {{ slide.slide_number }}: {{ slide.title }}
 
 {{ slide.content }}
 
