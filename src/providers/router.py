@@ -91,8 +91,8 @@ def select_model(
     if ext in (".pptx", ".mp4", ".mkv", ".avi", ".mov", ".wav"):
         return "gemini-3.1-pro-preview", "pptx_multimodal" if ext == ".pptx" else "video_multimodal"
 
-    if ext == ".pdf" and has_images:
-        return "gemini-3.1-pro-preview", "pdf_with_images"
+    if ext == ".pdf":
+        return "gemini-3.1-pro-preview", "pdf_multimodal"
 
     return "gemini-3-flash-preview", "text_default"
 

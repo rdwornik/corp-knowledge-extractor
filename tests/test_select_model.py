@@ -21,15 +21,16 @@ class TestSelectModel:
         assert model == "gemini-3.1-pro-preview"
         assert reason == "video_multimodal"
 
-    def test_select_model_pdf_text(self):
+    def test_select_model_pdf_always_pro(self):
+        """All PDFs route to Pro for multimodal (Council PDF decision)."""
         model, reason = select_model(Path("report.pdf"), 50000, has_images=False)
-        assert model == "gemini-3-flash-preview"
-        assert reason == "text_default"
+        assert model == "gemini-3.1-pro-preview"
+        assert reason == "pdf_multimodal"
 
-    def test_select_model_pdf_images(self):
+    def test_select_model_pdf_with_images_same(self):
         model, reason = select_model(Path("report.pdf"), 50000, has_images=True)
         assert model == "gemini-3.1-pro-preview"
-        assert reason == "pdf_with_images"
+        assert reason == "pdf_multimodal"
 
     def test_select_model_docx(self):
         model, reason = select_model(Path("document.docx"), 50000)

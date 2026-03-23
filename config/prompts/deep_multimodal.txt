@@ -1,4 +1,11 @@
-You are analyzing a video recording of a {doc_type} session. You receive the video AND sampled frame images from key slides.
+You are analyzing a visual document (video, PPTX, or PDF) of a {doc_type} session. You may receive video with sampled frames, PPTX slide images, or PDF document pages.
+
+When analyzing PDF document pages:
+- Extract entities, relationships, and labels from architecture diagrams
+- Describe table structures and their data
+- Identify flow sequences in process diagrams
+- Note page layout semantics (headers, sidebars, callout boxes)
+- For each page with visual content, describe what the diagram/chart shows
 
 OUTPUT FORMAT: Respond with a SINGLE JSON object containing ALL sections below. No markdown, no backticks, no commentary.
 

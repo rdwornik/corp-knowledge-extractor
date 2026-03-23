@@ -37,10 +37,10 @@ class TestProvenance:
         _, reason = select_model(Path("vid.mp4"), 100000)
         assert reason == "video_multimodal"
 
-    def test_provenance_routing_reason_pdf_images(self):
-        """PDF with images produces routing_reason='pdf_with_images'."""
+    def test_provenance_routing_reason_pdf_multimodal(self):
+        """All PDFs produce routing_reason='pdf_multimodal'."""
         _, reason = select_model(Path("scan.pdf"), 50000, has_images=True)
-        assert reason == "pdf_with_images"
+        assert reason == "pdf_multimodal"
 
     def test_provenance_prompt_version_deep(self):
         """Deep extraction gets prompt_version='deep_v2'."""

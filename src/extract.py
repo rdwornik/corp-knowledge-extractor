@@ -767,6 +767,194 @@ def _render_pdf_to_slides(pdf_path: Path, temp_dir: Path) -> list[Path]:
     return paths
 
 
+def _try_pdf_multimodal(
+    file: SourceFile,
+    config: dict,
+    text_result: TextExtractionResult,
+    user_context: str = "",
+) -> ExtractionResult | None:
+    """Upload PDF directly to Gemini Pro for native multimodal extraction.
+
+    Large PDF guard: >50 pages or >30MB → truncate to 50 pages for upload,
+    full text via pdfplumber (no truncation).
+
+    Returns ExtractionResult on success, None on failure.
+    """
+    import copy
+    import tempfile
+    from google.genai import types
+    from src.doc_type_classifier import classify_doc_type, should_extract_deep
+    from src.deep_prompt import build_deep_multimodal_prompt
+    from src.freshness import compute_freshness_fields
+    from src.providers.router import select_model
+
+    client = _get_client(config)
+    model_override = config.get("model_override")
+    model, routing_reason = select_model(
+        file.path, file.size_bytes, model_override=model_override,
+    )
+
+    doc_type = classify_doc_type(str(file.path))
+    use_deep = should_extract_deep(doc_type)
+
+    # --- Large PDF guard: truncate for upload if needed ---
+    pdf_path = file.path
+    multimodal_truncated = False
+    temp_dir = None
+
+    try:
+        import fitz
+        doc = fitz.open(str(file.path))
+        page_count = len(doc)
+        doc.close()
+    except Exception:
+        page_count = 0
+
+    if page_count > 50 or file.size_bytes > 30 * 1024 * 1024:
+        log.info(
+            "Large PDF: %d pages, %.1f MB — truncating to 50 pages for multimodal",
+            page_count, file.size_bytes / (1024 * 1024),
+        )
+        try:
+            import fitz
+            temp_dir = Path(tempfile.mkdtemp(prefix="cke_pdf_trunc_"))
+            doc = fitz.open(str(file.path))
+            truncated = fitz.open()
+            truncated.insert_pdf(doc, to_page=min(49, len(doc) - 1))
+            truncated_path = temp_dir / f"truncated_{file.path.name}"
+            truncated.save(str(truncated_path))
+            truncated.close()
+            doc.close()
+            pdf_path = truncated_path
+            multimodal_truncated = True
+        except Exception as exc:
+            log.warning("PDF truncation failed: %s — uploading full PDF", exc)
+
+    # --- Build prompt ---
+    if use_deep:
+        deep_prompt = build_deep_multimodal_prompt(doc_type)
+        taxonomy = get_taxonomy_for_prompt()
+        prompt = _prepend_user_context(f"{deep_prompt}\n\n{taxonomy}", user_context)
+    else:
+        prompt = _prepend_user_context(_get_prompt(config, "extract"), user_context)
+
+    # Include text grounding from pdfplumber
+    text_grounding = text_result.text[:30000] if text_result.text else ""
+    if text_grounding:
+        prompt += f"\n\n--- TEXT GROUNDING (from pdfplumber) ---\n{text_grounding}"
+
+    # --- Upload and extract ---
+    uploaded = _upload_and_wait(client, pdf_path, config)
+    contents = [
+        types.Part.from_uri(file_uri=uploaded.uri, mime_type="application/pdf"),
+        types.Part.from_text(text=prompt),
+    ]
+
+    token_budget = compute_token_budget(
+        depth="deep" if use_deep else "standard",
+        config=config,
+        slide_count=page_count,
+    )
+
+    response = client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            max_output_tokens=token_budget,
+        ),
+    )
+
+    response_text = response.text or ""
+    tokens = 0
+    if hasattr(response, "usage_metadata") and response.usage_metadata:
+        tokens = getattr(response.usage_metadata, "total_token_count", 0) or 0
+
+    data = _parse_response(response_text, file)
+
+    # Handle deep extraction overlay
+    overlay_data = {}
+    if use_deep:
+        overlay_key = f"{doc_type}_overlay"
+        if overlay_key in data:
+            overlay_data = data.pop(overlay_key) or {}
+
+    raw_data = copy.deepcopy(data)
+
+    pp = post_process_extraction(
+        raw_result=data,
+        source_tool="knowledge-extractor",
+        source_file=str(file.path),
+    )
+
+    result = _result_from_json(pp.data, file, tokens)
+    result.links_line = pp.links_line
+    result.validation_result = pp.validation_result.value
+    result.raw_json = raw_data
+
+    result.doc_type = doc_type
+    result.depth = "deep" if use_deep else "standard"
+    result.extraction_version = 2 if use_deep else 1
+    result.overlay = overlay_data
+
+    result.source_date = extract_source_date(file.path)
+    result.facts = _enrich_facts(data, file, result.source_date, text_result)
+    result.freshness = compute_freshness_fields(file.path)
+
+    # Haiku enrichment pass
+    enrichment_facts = _haiku_enrichment(
+        existing_facts=[f.get("fact", "") for f in result.facts],
+        source_text=text_result.text or "",
+        source_file=file,
+        source_date=result.source_date,
+        text_result=text_result,
+    )
+    if enrichment_facts:
+        result.facts.extend(enrichment_facts)
+        existing_kf = result.raw_json.get("key_facts") or []
+        result.raw_json["key_facts"] = existing_kf + [f["fact"] for f in enrichment_facts]
+        log.info("Haiku enrichment added %d facts for %s", len(enrichment_facts), file.path.name)
+
+    # --- Render cover page PNG ---
+    try:
+        import fitz
+        cover_dir = Path(tempfile.mkdtemp(prefix="cke_pdf_cover_"))
+        doc = fitz.open(str(file.path))
+        mat = fitz.Matrix(2, 2)  # 2x zoom for quality
+        pix = doc[0].get_pixmap(matrix=mat)
+        cover_path = cover_dir / "cover_001.png"
+        pix.save(str(cover_path))
+        doc.close()
+        result.slide_image_paths = [cover_path]
+        log.info("Rendered cover page PNG for %s", file.path.name)
+    except Exception as exc:
+        log.warning("Failed to render cover page PNG: %s", exc)
+
+    # Cleanup temp truncated PDF
+    if temp_dir:
+        try:
+            for f in temp_dir.iterdir():
+                f.unlink(missing_ok=True)
+            temp_dir.rmdir()
+        except OSError:
+            pass
+
+    # Provenance metadata
+    result.model_used = model
+    result.routing_reason = routing_reason
+    result.prompt_version = "deep_v2" if use_deep else "standard_v1"
+    result.extraction_cost_usd = _estimate_gemini_cost(model, tokens)
+    result.user_context = user_context
+    if multimodal_truncated:
+        result.raw_json["multimodal_truncated"] = True
+
+    log.info(
+        "PDF multimodal extracted: '%s' | pages=%d | truncated=%s | doc_type=%s | deep=%s | tokens=%d | model=%s",
+        result.title, page_count, multimodal_truncated, doc_type, use_deep, tokens, model,
+    )
+    return result
+
+
 def _try_pptx_pdf_multimodal(
     file: SourceFile,
     config: dict,
@@ -953,6 +1141,15 @@ def extract_from_text(
     from src.providers.base import ExtractionRequest
     from src.providers.validator import validate_and_retry
     from src.freshness import compute_freshness_fields
+
+    # For PDF: attempt native multimodal extraction via Gemini Pro
+    if file.path.suffix.lower() == ".pdf" and custom_prompt is None:
+        try:
+            result = _try_pdf_multimodal(file, config, text_result, user_context=user_context)
+            if result is not None:
+                return result
+        except Exception as exc:
+            log.warning("PDF multimodal failed for %s: %s — falling back to text-only", file.path.name, exc)
 
     # For PPTX: attempt PDF conversion for multimodal extraction
     if file.path.suffix.lower() == ".pptx" and custom_prompt is None:
