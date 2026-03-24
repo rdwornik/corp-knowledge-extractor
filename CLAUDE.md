@@ -219,3 +219,9 @@ CKE does NOT write to the vault. Output goes to staging; corp-by-os copies to va
 - 143 files -> 141 extracted (98.6%), $0.20 total
 - Tier 1: 6, Tier 2: 133, Tier 3: 2
 - 123 notes, 992 facts, 5 dashboards
+
+
+## Global Skills
+Before modifying code, consult ~/.claude/skills/gotchas/ for known ecosystem traps.
+After pytest passes, check ~/.claude/skills/verify/ for verification scripts.
+
