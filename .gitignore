@@ -3,6 +3,7 @@
 .venv/
 venv/
 env/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -35,10 +36,13 @@ MANIFEST
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Data & Media
 data/
 data/frames/
+data/cost_log.jsonl
+*.db
 
 *.mp4
 *.mkv
@@ -47,20 +51,23 @@ data/frames/
 *.mov
 !data/.gitkeep
 
+# Output (consolidated)
+_outputs/
+/output/
+output_test/
+output_v2/
+output_v3/
+
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
 data/input/
-/output/
 
-# Ruff
+# Linting / Type checking
 .ruff_cache/
+.mypy_cache/
 
 # Claude Code (local settings only — rules/ is tracked)
 .claude/settings.local.json
 tmp_debug/
-
-output_test/
-output_v2/
-output_v3/
