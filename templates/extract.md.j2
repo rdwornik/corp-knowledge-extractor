@@ -22,6 +22,7 @@ quality: "{{ quality }}"
 {% endif %}{% if prompt_version %}prompt_version: "{{ prompt_version }}"
 {% endif %}tokens_used: {{ tokens_used }}
 {% if quality_score is defined %}quality_score: {{ quality_score }}
+{% endif %}{% if tag_validation_warnings is defined and tag_validation_warnings > 0 %}tag_validation_warnings: {{ tag_validation_warnings }}
 {% endif %}{% if extraction_cost_usd is defined %}extraction_cost_usd: {{ "%.4f" | format(extraction_cost_usd) }}
 {% endif %}source_tool: "{{ source_tool | default('knowledge-extractor') }}"
 schema_version: 2

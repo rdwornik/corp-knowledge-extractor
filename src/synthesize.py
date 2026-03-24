@@ -35,7 +35,7 @@ from src.compress import compress_video, needs_compression
 from src.correlate import FileGroup
 from src.extract import ExtractionResult
 from src.inventory import FileType, SourceFile
-from src.post_process import generate_tags
+from src.post_process import generate_tags, validate_tags
 from src.utils import parse_llm_json
 
 from src.transcript import TranscriptResult
@@ -341,6 +341,12 @@ def build_package(
         }
         tags = generate_tags(tag_input)
 
+        # Validate tags against taxonomy
+        tag_results = validate_tags(tags)
+        tag_validation_warnings = sum(
+            1 for r in tag_results if r["reason"] in ("unknown_prefix", "unvalidated")
+        )
+
         # Compute quality score from assembled data
         _key_facts = result.raw_json.get("key_facts") or []
         _entities = result.raw_json.get("entities_mentioned") or []
@@ -400,6 +406,7 @@ def build_package(
             ],
             # Tags
             tags=tags,
+            tag_validation_warnings=tag_validation_warnings,
             # Quality + Cost + Provenance
             quality_score=quality_score,
             extraction_cost_usd=result.extraction_cost_usd,

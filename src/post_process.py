@@ -217,6 +217,66 @@ def generate_tags(frontmatter: dict) -> list[str]:
     return [t for t in tags if not (t in seen or seen.add(t))]
 
 
+def validate_tags(tags: list[str]) -> list[dict]:
+    """Validate tags against corp-os-meta taxonomy.
+
+    Returns list of {"tag": str, "valid": bool, "reason": str}.
+    All tags are kept regardless of validity — this is informational only.
+    """
+    try:
+        taxonomy = load_taxonomy()
+    except Exception:
+        logger.warning("Could not load taxonomy, skipping tag validation")
+        return [{"tag": t, "valid": True, "reason": "unvalidated"} for t in tags]
+
+    VALID_PREFIXES = {"product/", "topic/", "domain/", "client/", "type/", "source/"}
+
+    results = []
+    for tag in tags:
+        # Check prefix
+        prefix_valid = any(tag.startswith(p) for p in VALID_PREFIXES)
+        if not prefix_valid:
+            logger.warning("Tag with unknown prefix: %s", tag)
+            results.append({"tag": tag, "valid": False, "reason": "unknown_prefix"})
+            continue
+
+        # Extract prefix and value
+        prefix, _, value = tag.partition("/")
+
+        # Check value against taxonomy known values
+        known_values = _get_known_values(taxonomy, prefix)
+        if known_values and value not in known_values:
+            logger.warning("Tag value not in taxonomy: %s", tag)
+            results.append({"tag": tag, "valid": True, "reason": "unvalidated"})
+        else:
+            results.append({"tag": tag, "valid": True, "reason": "validated"})
+
+    return results
+
+
+def _get_known_values(taxonomy: dict, prefix: str) -> set:
+    """Get known normalized values for a tag prefix from taxonomy."""
+    TAXONOMY_MAP = {
+        "product": "products",
+        "topic": "topics",
+        "domain": "domains",
+        "client": "clients",
+        "type": "document_types",
+        "source": "source_types",
+    }
+    key = TAXONOMY_MAP.get(prefix, "")
+    values = taxonomy.get(key, [])
+    if isinstance(values, list):
+        result = set()
+        for v in values:
+            if isinstance(v, dict):
+                result.add(_normalize_tag(v.get("name", "")))
+            elif isinstance(v, str):
+                result.add(_normalize_tag(v))
+        return result
+    return set()
+
+
 def _log_unknown_terms(terms: list[str]):
     """Append unknown terms to local review file for batch approval."""
     review_path = Path(__file__).parent.parent / "config" / "taxonomy_review.yaml"

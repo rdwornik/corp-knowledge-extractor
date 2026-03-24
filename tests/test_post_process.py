@@ -539,7 +539,7 @@ def test_normalize_no_false_positive():
 # Type enforcement from file extension (BUG 1: JLR pilot)
 # ---------------------------------------------------------------------------
 
-from src.post_process import enforce_type_from_extension
+from src.post_process import enforce_type_from_extension, validate_tags
 
 
 def test_docx_always_document():
@@ -594,3 +594,50 @@ def test_extension_overrides_llm():
     )
     assert result["type"] == "document"
     assert result["content_type"] == "document"
+
+
+# ---------------------------------------------------------------------------
+# Tag validation against taxonomy (FIX 1: pre-monorepo)
+# ---------------------------------------------------------------------------
+
+
+def test_validate_tags_all_valid():
+    """Known products from taxonomy → all validated."""
+    tags = ["product/blue-yonder-platform", "topic/disaster-recovery"]
+    results = validate_tags(tags)
+    assert all(r["valid"] for r in results)
+    assert all(r["reason"] == "validated" for r in results)
+
+
+def test_validate_tags_unknown_value():
+    """Unknown product value → unvalidated warning, still valid."""
+    tags = ["product/totally-unknown-thing"]
+    results = validate_tags(tags)
+    assert len(results) == 1
+    assert results[0]["valid"] is True
+    assert results[0]["reason"] == "unvalidated"
+
+
+def test_validate_tags_unknown_prefix():
+    """Tag with unknown prefix → invalid."""
+    tags = ["random/some-tag"]
+    results = validate_tags(tags)
+    assert len(results) == 1
+    assert results[0]["valid"] is False
+    assert results[0]["reason"] == "unknown_prefix"
+
+
+def test_validate_tags_no_taxonomy():
+    """If taxonomy loading fails, all tags return unvalidated, no crash."""
+    from unittest.mock import patch
+    with patch("src.post_process.load_taxonomy", side_effect=Exception("no taxonomy")):
+        results = validate_tags(["product/test", "topic/test"])
+    assert len(results) == 2
+    assert all(r["valid"] for r in results)
+    assert all(r["reason"] == "unvalidated" for r in results)
+
+
+def test_validate_tags_empty():
+    """Empty tag list → empty results."""
+    results = validate_tags([])
+    assert results == []
