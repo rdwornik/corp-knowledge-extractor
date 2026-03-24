@@ -55,6 +55,32 @@ def normalize_company_names(text: str) -> str:
     return text
 
 
+# Short product names → canonical Blue Yonder forms
+PRODUCT_ALIASES = {
+    "Demand Planning": "Blue Yonder Demand Planning",
+    "Supply Planning": "Blue Yonder Supply Planning",
+    "Control Tower": "Blue Yonder Control Tower",
+    "WMS": "Blue Yonder WMS",
+    "TMS": "Blue Yonder TMS",
+    "OMS": "Blue Yonder OMS",
+    "Platform": "Blue Yonder Platform",
+}
+
+
+def normalize_product_names(products: list[str]) -> list[str]:
+    """Normalize short product names to canonical Blue Yonder forms.
+
+    Applied after corp-os-meta normalization to catch remaining short forms.
+    Deduplicates: ["Demand Planning", "Blue Yonder Demand Planning"] → ["Blue Yonder Demand Planning"]
+    """
+    result = []
+    for p in products:
+        canonical = PRODUCT_ALIASES.get(p.strip(), p)
+        if canonical not in result:
+            result.append(canonical)
+    return result
+
+
 @dataclass
 class PostProcessResult:
     """Result of post-processing with metadata about what changed."""
@@ -134,6 +160,10 @@ def post_process_extraction(
         val = normalized_data.get(str_field, "")
         if val:
             normalized_data[str_field] = normalize_company_names(val)
+
+    # Normalize short product names to canonical Blue Yonder forms
+    if "products" in normalized_data and isinstance(normalized_data["products"], list):
+        normalized_data["products"] = normalize_product_names(normalized_data["products"])
 
     if changes:
         logger.info("Normalized: %s", ", ".join(changes))

@@ -348,7 +348,8 @@ def build_package(
         )
 
         # Compute quality score from assembled data
-        _key_facts = result.raw_json.get("key_facts") or []
+        # Fall back to key_points when key_facts is empty (standard extractions)
+        _key_facts = result.raw_json.get("key_facts") or result.key_points or []
         _entities = result.raw_json.get("entities_mentioned") or []
         _overlay_fields = len(result.overlay) if result.overlay else 0
         _content_chars = len(result.summary or "") + sum(len(p) for p in result.key_points)
@@ -392,7 +393,7 @@ def build_package(
             doc_type=result.doc_type,
             extraction_version=result.extraction_version,
             depth=result.depth,
-            key_facts=result.raw_json.get("key_facts") or [],
+            key_facts=result.raw_json.get("key_facts") or result.key_points or [],
             entities_mentioned=result.raw_json.get("entities_mentioned") or [],
             overlay=result.overlay,
             slide_summaries=result.raw_json.get("slide_summaries") or [],

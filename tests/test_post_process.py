@@ -43,7 +43,7 @@ def test_links_line_generated():
         source_file="test.mkv",
     )
     assert "[[Disaster Recovery]]" in result.links_line
-    assert "[[WMS]]" in result.links_line
+    assert "[[Blue Yonder WMS]]" in result.links_line
     assert "[[Mike Geller]]" in result.links_line
     assert "(Presenter)" not in result.links_line
 
@@ -641,3 +641,58 @@ def test_validate_tags_empty():
     """Empty tag list → empty results."""
     results = validate_tags([])
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# Product name normalization (FIX 2: v3 regression)
+# ---------------------------------------------------------------------------
+
+
+from src.post_process import normalize_product_names
+
+
+def test_normalize_short_product():
+    """'Demand Planning' → 'Blue Yonder Demand Planning'."""
+    assert normalize_product_names(["Demand Planning"]) == ["Blue Yonder Demand Planning"]
+
+
+def test_normalize_already_canonical():
+    """'Blue Yonder WMS' is already canonical — unchanged."""
+    assert normalize_product_names(["Blue Yonder WMS"]) == ["Blue Yonder WMS"]
+
+
+def test_normalize_dedup_after():
+    """Alias + canonical should deduplicate to canonical only."""
+    result = normalize_product_names(["Demand Planning", "Blue Yonder Demand Planning"])
+    assert result == ["Blue Yonder Demand Planning"]
+
+
+def test_normalize_unknown_product():
+    """Unknown products not in alias map pass through unchanged."""
+    assert normalize_product_names(["SAP APO"]) == ["SAP APO"]
+
+
+def test_normalize_multiple_products():
+    """Multiple aliases normalize and deduplicate."""
+    result = normalize_product_names(["WMS", "TMS", "Blue Yonder WMS"])
+    assert result == ["Blue Yonder WMS", "Blue Yonder TMS"]
+
+
+def test_normalize_products_in_post_process():
+    """Product normalization runs during post_process_extraction."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Test",
+            "date": "2026-03-01",
+            "type": "document",
+            "topics": [],
+            "products": ["Demand Planning", "Supply Planning"],
+            "summary": "Test.",
+        },
+        source_file="test.md",
+    )
+    assert "Blue Yonder Demand Planning" in result.data["products"]
+    assert "Blue Yonder Supply Planning" in result.data["products"]
+    # Short forms should not survive
+    assert "Demand Planning" not in result.data["products"]
+    assert "Supply Planning" not in result.data["products"]

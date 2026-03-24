@@ -97,11 +97,24 @@ prompts:
     - A fact is a single specific claim, number, decision, or capability statement.
     - Aim for 5-20 facts per document (more for longer/richer documents).
 
+    REQUIRED OUTPUT FIELDS:
+    - key_facts: Extract at least 5 specific factual claims from this document.
+      Each fact must contain at least one number, date, metric, company name,
+      or product detail. If the document has fewer than 5 notable facts, extract
+      as many as possible.
+    - entities_mentioned: List all companies, products, people, and organizations
+      mentioned.
+
     Respond ONLY with valid JSON (no markdown fences):
     {
       "title": "Descriptive title using full product/company names",
       "summary": "2-3 sentences — what matters here and why, not what happened",
       "key_points": ["insight 1", "insight 2"],
+      "key_facts": [
+        "Specific fact with number/date/metric (cite section if possible)",
+        "Another specific factual claim with concrete data"
+      ],
+      "entities_mentioned": ["Company A", "Product B", "Person C"],
       "facts": [
         {"fact": "Concrete atomic fact with specific detail", "page": 3},
         {"fact": "Another specific fact or capability", "slide": 5}

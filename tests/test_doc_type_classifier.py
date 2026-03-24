@@ -49,7 +49,7 @@ class TestFolderPathRules:
         assert classify_doc_type("C:/Projects/Meeting/notes_2026.md") == "meeting"
 
     def test_workshop_folder(self):
-        assert classify_doc_type("C:/Projects/Workshop/day1.pptx") == "meeting"
+        assert classify_doc_type("C:/Projects/Workshop/day1.pptx") == "workshop"
 
 
 class TestFilenameRules:
@@ -144,7 +144,11 @@ class TestFilenameDocType:
         assert classify_from_filename("GCC Discovery Questions.xlsx") == "discovery"
 
     def test_filename_no_match(self):
-        assert classify_from_filename("Platform Architecture.pdf") is None
+        """'Platform Architecture.pdf' now matches architecture pattern."""
+        assert classify_from_filename("Platform Architecture.pdf") == "architecture"
+
+    def test_filename_truly_no_match(self):
+        assert classify_from_filename("quarterly_update.pdf") is None
 
     def test_filename_case_insensitive(self):
         assert classify_from_filename("jlr_tms_rfi.docx") == "rfp_response"
@@ -158,3 +162,116 @@ class TestFilenameDocType:
 
     def test_discovery_deep(self):
         assert should_extract_deep("discovery") is True
+
+
+# ---------------------------------------------------------------------------
+# Expanded classifier patterns (FIX 3: v3 regression — general catch-all)
+# ---------------------------------------------------------------------------
+
+
+class TestExpandedFilenamePatterns:
+    """New filename patterns reduce 'general' catch-all."""
+
+    def test_classify_frs(self):
+        assert classify_from_filename("Lenzing_BSC_FRS_v2.xlsx") == "requirements_spec"
+
+    def test_classify_functional_requirements(self):
+        assert classify_from_filename("Functional_Requirements_Spec.docx") == "requirements_spec"
+
+    def test_classify_user_stories(self):
+        assert classify_from_filename("BSC_User_Stories.xlsx") == "requirements_spec"
+
+    def test_classify_annual_report(self):
+        assert classify_from_filename("Annual_Report_2023.pdf") == "financial_report"
+
+    def test_classify_earnings(self):
+        assert classify_from_filename("Q3_Earnings_Release.pdf") == "financial_report"
+
+    def test_classify_sow(self):
+        assert classify_from_filename("PoC_Statement_of_Work.docx") == "proposal"
+
+    def test_classify_poc_proposal(self):
+        assert classify_from_filename("PoC_Proposal_Lenzing.docx") == "proposal"
+
+    def test_classify_catalog(self):
+        assert classify_from_filename("Product_Catalog_Master.xlsx") == "master_data"
+
+    def test_classify_hierarchy(self):
+        assert classify_from_filename("Product_Hierarchy_v2.xlsx") == "master_data"
+
+    def test_classify_item_master(self):
+        assert classify_from_filename("Item_Master_Data.csv") == "master_data"
+
+    def test_classify_architecture(self):
+        assert classify_from_filename("Platform_Architecture_Overview.pdf") == "architecture"
+
+    def test_classify_training(self):
+        assert classify_from_filename("WMS_Training_Module_3.pptx") == "training"
+
+    def test_classify_competitive(self):
+        assert classify_from_filename("Kinaxis_vs_BY_Battlecard.pptx") == "competitive"
+
+    def test_classify_workshop(self):
+        assert classify_from_filename("Demand_Planning_Workshop.pptx") == "workshop"
+
+    def test_classify_demo(self):
+        assert classify_from_filename("WMS_Demo_Script.pptx") == "demo"
+
+    def test_classify_meeting_notes(self):
+        assert classify_from_filename("Discovery_Meeting_Notes_March.md") == "meeting"
+
+    def test_classify_debrief(self):
+        assert classify_from_filename("Design_Thinking_Debrief.docx") == "meeting"
+
+    def test_classify_general_fallback(self):
+        """Files that match nothing still get 'general'."""
+        assert classify_from_filename("random_notes.txt") is None
+
+
+class TestExpandedDocTypeDepth:
+    """New doc_types correctly route to deep or standard."""
+
+    def test_requirements_spec_deep(self):
+        assert should_extract_deep("requirements_spec") is True
+
+    def test_financial_report_deep(self):
+        assert should_extract_deep("financial_report") is True
+
+    def test_proposal_deep(self):
+        assert should_extract_deep("proposal") is True
+
+    def test_competitive_deep(self):
+        assert should_extract_deep("competitive") is True
+
+    def test_workshop_deep(self):
+        assert should_extract_deep("workshop") is True
+
+    def test_demo_deep(self):
+        assert should_extract_deep("demo") is True
+
+    def test_master_data_standard(self):
+        """Master data is Tier 1 — no deep extraction needed."""
+        assert should_extract_deep("master_data") is False
+
+
+class TestExpandedFullClassification:
+    """End-to-end classify_doc_type with new patterns."""
+
+    def test_frs_in_generic_folder(self):
+        assert classify_doc_type("/generic/Lenzing_BSC_FRS_v2.xlsx") == "requirements_spec"
+
+    def test_annual_report_in_generic_folder(self):
+        assert classify_doc_type("/generic/Annual_Report_2023.pdf") == "financial_report"
+
+    def test_sow_in_generic_folder(self):
+        assert classify_doc_type("/generic/PoC_Statement_of_Work.docx") == "proposal"
+
+    def test_catalog_in_generic_folder(self):
+        assert classify_doc_type("/generic/Product_Catalog_Master.xlsx") == "master_data"
+
+    def test_workshop_folder_override(self):
+        """Workshop folder → 'workshop' (was 'meeting' before)."""
+        assert classify_doc_type("C:/Projects/Workshop/day1.pptx") == "workshop"
+
+    def test_battlecard_filename(self):
+        assert classify_doc_type("/generic/competitive_battlecard_kinaxis.pptx") == "competitive"

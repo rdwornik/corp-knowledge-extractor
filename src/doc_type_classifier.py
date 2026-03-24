@@ -23,14 +23,43 @@ DEEP_DOC_TYPES = {
     "discovery",
     "meeting",
     "training",
+    "requirements_spec",
+    "financial_report",
+    "proposal",
+    "competitive",
+    "workshop",
+    "demo",
 }
-STANDARD_DOC_TYPES = {"general"}
+# master_data is Tier 1 — no deep extraction needed for structured data tables
+STANDARD_DOC_TYPES = {"general", "master_data"}
 
 # Filename-based doc_type patterns — checked BEFORE folder/content rules
 FILENAME_DOC_TYPE_PATTERNS = [
+    # RFP / vendor assessment (highest priority — specific doc types)
     (r"(?i)(RFI|RFP|request.for.(information|proposal))", "rfp_response"),
     (r"(?i)(questionnaire|vendor.assessment|security.assessment|VA\b)", "vendor_assessment"),
-    (r"(?i)(discovery|requirements)", "discovery"),
+    # Requirements / specifications
+    (r"(?i)(FRS|functional.requirement|user.stor)", "requirements_spec"),
+    # Proposals / SOWs
+    (r"(?i)(SOW|statement.of.work|PoC.proposal)", "proposal"),
+    # Financial / investor docs
+    (r"(?i)(annual.report|earnings|financial.report|investor)", "financial_report"),
+    # Master data / catalogs (standard depth — no deep extraction)
+    (r"(?i)(product.catalog|hierarchy|master.data|item.master|price.list)", "master_data"),
+    # Architecture / technical
+    (r"(?i)(architecture|technical.overview|system.design)", "architecture"),
+    # Competitive
+    (r"(?i)(competitive|battlecard|comparison|vs\.)", "competitive"),
+    # Training / enablement
+    (r"(?i)(training|enablement|curriculum|course)", "training"),
+    # Workshop / hands-on
+    (r"(?i)(workshop|hands.on|lab\b)", "workshop"),
+    # Demo / showcase
+    (r"(?i)(demo|demonstration|showcase)", "demo"),
+    # Meeting / debrief
+    (r"(?i)(meeting.notes|minutes|recap|debrief)", "meeting"),
+    # Discovery (keep last — "requirements" moved to requirements_spec)
+    (r"(?i)(discovery)", "discovery"),
 ]
 
 
@@ -72,7 +101,9 @@ def classify_doc_type(filepath: str, folder_context: str | None = None) -> str:
         return "security"
     if "rfp" in path_lower and ("response" in path_lower or "answer" in path_lower or "submission" in path_lower):
         return "rfp_response"
-    if "discovery" in path_lower or "meeting" in path_lower or "workshop" in path_lower:
+    if "workshop" in path_lower:
+        return "workshop"
+    if "discovery" in path_lower or "meeting" in path_lower:
         return "meeting"
 
     # --- Filename rules ---
@@ -96,10 +127,16 @@ def classify_doc_type(filepath: str, folder_context: str | None = None) -> str:
         return "commercial"
     if any(kw in name_lower for kw in ["rfp_response", "rfp_answer", "rfi_response"]):
         return "rfp_response"
-    if any(kw in name_lower for kw in ["meeting", "discovery", "workshop", "notes"]):
+    if any(kw in name_lower for kw in ["workshop", "hands_on", "lab"]):
+        return "workshop"
+    if any(kw in name_lower for kw in ["meeting", "discovery", "notes", "debrief", "recap"]):
         return "meeting"
     if any(kw in name_lower for kw in ["training", "enablement", "bootcamp"]):
         return "training"
+    if any(kw in name_lower for kw in ["demo", "demonstration", "showcase"]):
+        return "demo"
+    if any(kw in name_lower for kw in ["battlecard", "competitive"]):
+        return "competitive"
 
     return "general"
 

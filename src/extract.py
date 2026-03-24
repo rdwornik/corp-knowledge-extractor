@@ -1247,7 +1247,8 @@ def extract_from_text(
         data = data["base"]
 
     # Preserve raw output before post-processing mutates it
-    raw_data = copy.deepcopy(data) if custom_prompt or use_deep else None
+    # Always preserve raw_json so key_facts/entities flow to output for all depths
+    raw_data = copy.deepcopy(data)
 
     # Post-process via corp-os-meta
     pp = post_process_extraction(
@@ -1259,8 +1260,7 @@ def extract_from_text(
     result = _result_from_json(pp.data, file, tokens)
     result.links_line = pp.links_line
     result.validation_result = pp.validation_result.value
-    if raw_data is not None:
-        result.raw_json = raw_data
+    result.raw_json = raw_data
 
     # Deep extraction metadata
     result.doc_type = doc_type
