@@ -1,4 +1,4 @@
-# Corporate Knowledge Extractor (CKE) v0.6.0
+# Corporate Knowledge Extractor (CKE) v0.7.0
 
 AI-powered extraction engine for corporate presentations, videos, and documents. Converts PPTX, MP4, PDF, DOCX into structured knowledge notes for Obsidian.
 
