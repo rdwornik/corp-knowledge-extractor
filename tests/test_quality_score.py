@@ -77,6 +77,56 @@ class TestComputeQualityScore:
         assert score == 0
 
 
+# ---------------------------------------------------------------------------
+# Bug 3: quality_score reads wrong field (JLR pilot)
+# ---------------------------------------------------------------------------
+
+
+class TestQualityScoreFactSources:
+    def test_quality_score_uses_facts(self):
+        """24 facts in JSON dicts, 0 key_facts → score uses 24."""
+        facts = [{"fact": f"Detailed fact number {i} with enough content to pass the 30-char filter", "verification_status": "verified"} for i in range(24)]
+        score = compute_quality_score(
+            key_facts=[],
+            facts_with_status=facts,
+            overlay_fields_populated=0,
+            content_chars=0,
+            entities_count=0,
+        )
+        # 24 specific facts * 2 = 48, capped at 30
+        assert score >= 30, f"Expected >= 30 from facts dicts alone, got {score}"
+
+    def test_quality_score_uses_key_facts(self):
+        """15 key_facts, 10 facts → score uses 15 (the larger source)."""
+        key_facts = [f"This is key fact number {i} with enough length to pass thirty chars" for i in range(15)]
+        facts = [{"fact": f"Short fact {i} that is long enough to pass thirty characters", "verification_status": "verified"} for i in range(10)]
+        score = compute_quality_score(
+            key_facts=key_facts,
+            facts_with_status=facts,
+            overlay_fields_populated=0,
+            content_chars=0,
+            entities_count=0,
+        )
+        # 15 specific key_facts * 2 = 30 (max)
+        assert score >= 30, f"Expected >= 30 from key_facts, got {score}"
+
+    def test_quality_score_verified_from_facts(self):
+        """facts with verification_status → verified ratio counted."""
+        facts = (
+            [{"fact": "Verified fact", "verification_status": "verified"} for _ in range(8)]
+            + [{"fact": "Unverified fact", "verification_status": "unverified"} for _ in range(2)]
+        )
+        score = compute_quality_score(
+            key_facts=[],
+            facts_with_status=facts,
+            overlay_fields_populated=0,
+            content_chars=0,
+            entities_count=0,
+        )
+        # 80% verified → 16 points from verification
+        assert score >= 16, f"Expected >= 16 from verification ratio, got {score}"
+
+
 class TestQualityScoreInFrontmatter:
     def _render(self, quality_score):
         templates_dir = Path(__file__).parent.parent / "templates"

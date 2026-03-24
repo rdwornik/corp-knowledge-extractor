@@ -49,7 +49,8 @@ def test_links_line_generated():
 
 
 def test_content_type_mapped_to_type():
-    """CKE uses content_type, corp-os-meta uses type."""
+    """CKE uses content_type, corp-os-meta uses type.
+    Note: .mkv triggers extension override to 'presentation', so use .md to test mapping."""
     result = post_process_extraction(
         raw_result={
             "title": "Test",
@@ -58,7 +59,7 @@ def test_content_type_mapped_to_type():
             "topics": ["SLA"],
             "summary": "Training video.",
         },
-        source_file="test.mkv",
+        source_file="test.md",
     )
     assert "type" in result.data
     assert result.data["type"] == "training"
@@ -532,3 +533,64 @@ def test_normalize_in_summary():
 
 def test_normalize_no_false_positive():
     assert normalize_company_names("Blue Sky Yonder") == "Blue Sky Yonder"
+
+
+# ---------------------------------------------------------------------------
+# Type enforcement from file extension (BUG 1: JLR pilot)
+# ---------------------------------------------------------------------------
+
+from src.post_process import enforce_type_from_extension
+
+
+def test_docx_always_document():
+    """.docx with any content → type='document'."""
+    result = post_process_extraction(
+        raw_result={
+            "title": "Sales Deck",
+            "date": "2026-03-01",
+            "type": "presentation",
+            "content_type": "presentation",
+            "topics": [],
+            "summary": "Test.",
+        },
+        source_file="JLR_TMS_RFI_Response.docx",
+    )
+    assert result.data["type"] == "document"
+
+
+def test_xlsx_always_spreadsheet():
+    """.xlsx → type='spreadsheet'."""
+    result = enforce_type_from_extension(
+        {"type": "presentation", "content_type": "presentation"},
+        "VA_Questionnaire.xlsx",
+    )
+    assert result["type"] == "spreadsheet"
+    assert result["content_type"] == "spreadsheet"
+
+
+def test_pptx_always_presentation():
+    """.pptx → type='presentation'."""
+    result = enforce_type_from_extension(
+        {"type": "document", "content_type": "document"},
+        "Platform_Overview.pptx",
+    )
+    assert result["type"] == "presentation"
+
+
+def test_pdf_always_document():
+    """.pdf → type='document'."""
+    result = enforce_type_from_extension(
+        {"type": "presentation", "content_type": "presentation"},
+        "Architecture.pdf",
+    )
+    assert result["type"] == "document"
+
+
+def test_extension_overrides_llm():
+    """LLM says 'presentation' for .docx → overridden to 'document'."""
+    result = enforce_type_from_extension(
+        {"type": "presentation", "content_type": "presentation"},
+        "Meeting_Notes.docx",
+    )
+    assert result["type"] == "document"
+    assert result["content_type"] == "document"

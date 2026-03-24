@@ -88,17 +88,28 @@ def compute_quality_score(
     content_chars: int,
     entities_count: int,
 ) -> int:
-    """Compute 0-100 quality score for frontmatter."""
+    """Compute 0-100 quality score for frontmatter.
+
+    Uses whichever source (key_facts strings or facts dicts) has more data
+    for fact counting. Verification ratio always comes from facts_with_status
+    (which carry verification_status).
+    """
     score = 0
 
-    # Facts: max 30
-    specific_facts = [f for f in key_facts if len(str(f)) >= 30]
-    score += min(30, len(specific_facts) * 2)
+    # Facts: max 30 — use whichever source has more specific facts
+    specific_from_kf = [f for f in key_facts if len(str(f)) >= 30]
+    specific_from_facts = []
+    if facts_with_status:
+        specific_from_facts = [
+            f for f in facts_with_status if len(str(f.get("fact", ""))) >= 30
+        ]
+    fact_count = max(len(specific_from_kf), len(specific_from_facts))
+    score += min(30, fact_count * 2)
 
-    # Verification: max 20
+    # Verification: max 20 — always from facts_with_status (has verification_status)
     if facts_with_status:
         verified = sum(1 for f in facts_with_status if f.get("verification_status") == "verified")
-        ratio = verified / len(facts_with_status) if facts_with_status else 0
+        ratio = verified / len(facts_with_status)
         score += int(min(20, ratio * 20))
 
     # Overlay: max 20

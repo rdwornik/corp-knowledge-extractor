@@ -1,7 +1,12 @@
 """Tests for the deterministic document type classifier."""
 
 import pytest
-from src.doc_type_classifier import classify_doc_type, should_extract_deep, DEEP_DOC_TYPES
+from src.doc_type_classifier import (
+    classify_doc_type,
+    classify_from_filename,
+    should_extract_deep,
+    DEEP_DOC_TYPES,
+)
 
 
 class TestFolderPathRules:
@@ -116,3 +121,40 @@ class TestShouldExtractDeep:
 
     def test_unknown_is_standard(self):
         assert should_extract_deep("unknown") is False
+
+
+# ---------------------------------------------------------------------------
+# Filename-based doc_type pre-classification (BUG 2: JLR pilot)
+# ---------------------------------------------------------------------------
+
+
+class TestFilenameDocType:
+    """Filename patterns detect RFI/RFP/Questionnaire BEFORE folder/content rules."""
+
+    def test_filename_rfi(self):
+        assert classify_from_filename("JLR TMS RFI Response.docx") == "rfp_response"
+
+    def test_filename_questionnaire(self):
+        assert classify_from_filename("VA Questionnaire.xlsx") == "vendor_assessment"
+
+    def test_filename_rfp(self):
+        assert classify_from_filename("Honda RFP Response v2.docx") == "rfp_response"
+
+    def test_filename_discovery(self):
+        assert classify_from_filename("GCC Discovery Questions.xlsx") == "discovery"
+
+    def test_filename_no_match(self):
+        assert classify_from_filename("Platform Architecture.pdf") is None
+
+    def test_filename_case_insensitive(self):
+        assert classify_from_filename("jlr_tms_rfi.docx") == "rfp_response"
+
+    def test_filename_overrides_general_in_classify(self):
+        """RFI in filename → rfp_response even in generic folder."""
+        assert classify_doc_type("/generic/JLR TMS RFI Response.docx") == "rfp_response"
+
+    def test_vendor_assessment_deep(self):
+        assert should_extract_deep("vendor_assessment") is True
+
+    def test_discovery_deep(self):
+        assert should_extract_deep("discovery") is True

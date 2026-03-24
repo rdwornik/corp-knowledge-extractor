@@ -23,6 +23,30 @@ from src.utils import normalize_string_list
 logger = logging.getLogger(__name__)
 
 
+def enforce_type_from_extension(result: dict, source_path: str) -> dict:
+    """Override content type based on file extension.
+
+    File extension is the ground truth for document type — LLM classification
+    can misidentify DOCX/XLSX as "presentation" etc.
+    """
+    ext = Path(source_path).suffix.lower()
+    TYPE_MAP = {
+        ".docx": "document",
+        ".xlsx": "spreadsheet",
+        ".csv": "spreadsheet",
+        ".pdf": "document",
+        ".pptx": "presentation",
+        ".mp4": "presentation",
+        ".mkv": "presentation",
+        ".avi": "presentation",
+    }
+    if ext in TYPE_MAP:
+        result["content_type"] = TYPE_MAP[ext]
+        if "type" in result:
+            result["type"] = TYPE_MAP[ext]
+    return result
+
+
 def normalize_company_names(text: str) -> str:
     """Fix known LLM company name duplications."""
     if not text:
@@ -116,6 +140,10 @@ def post_process_extraction(
     if unknown:
         logger.info("Unknown terms: %s", unknown)
         _log_unknown_terms(unknown)
+
+    # Enforce type from file extension (overrides LLM classification)
+    if source_file:
+        normalized_data = enforce_type_from_extension(normalized_data, source_file)
 
     # Validate using corp-os-meta
     validation_result, validated_note, issues = validate_frontmatter(normalized_data)

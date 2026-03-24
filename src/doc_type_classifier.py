@@ -10,6 +10,7 @@ doc_type determines extraction depth:
 - "general" -> standard extraction (base only)
 """
 
+import re
 from pathlib import Path
 
 DEEP_DOC_TYPES = {
@@ -18,10 +19,30 @@ DEEP_DOC_TYPES = {
     "commercial",
     "product_doc",
     "rfp_response",
+    "vendor_assessment",
+    "discovery",
     "meeting",
     "training",
 }
 STANDARD_DOC_TYPES = {"general"}
+
+# Filename-based doc_type patterns — checked BEFORE folder/content rules
+FILENAME_DOC_TYPE_PATTERNS = [
+    (r"(?i)(RFI|RFP|request.for.(information|proposal))", "rfp_response"),
+    (r"(?i)(questionnaire|vendor.assessment|security.assessment|VA\b)", "vendor_assessment"),
+    (r"(?i)(discovery|requirements)", "discovery"),
+]
+
+
+def classify_from_filename(filename: str) -> str | None:
+    """Pre-classify doc_type from filename patterns.
+
+    Returns doc_type string if a pattern matches, None otherwise.
+    """
+    for pattern, doc_type in FILENAME_DOC_TYPE_PATTERNS:
+        if re.search(pattern, filename):
+            return doc_type
+    return None
 
 
 def classify_doc_type(filepath: str, folder_context: str | None = None) -> str:
@@ -34,6 +55,11 @@ def classify_doc_type(filepath: str, folder_context: str | None = None) -> str:
     """
     path_lower = filepath.lower().replace("\\", "/")
     name_lower = Path(filepath).name.lower()
+
+    # --- Filename pattern rules (highest priority) ---
+    filename_match = classify_from_filename(Path(filepath).name)
+    if filename_match is not None:
+        return filename_match
 
     # --- Folder path rules ---
     if "01_product_docs" in path_lower or "product_docs" in path_lower:
