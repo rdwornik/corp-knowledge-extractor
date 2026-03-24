@@ -228,6 +228,24 @@ class BatchProcessor:
         if result.slides and sampled_frames:
             keep_slide_frames(sampled_frames, result.slides, output_frames_dir, self.config)
             logger.info("  Kept %d slide frames", len(result.slides))
+        elif result.slide_image_paths:
+            # PDF/PPTX multimodal: copy rendered slide PNGs to source/slides/
+            slides_dir = pkg_dir / "source" / "slides"
+            slides_dir.mkdir(parents=True, exist_ok=True)
+            for png in result.slide_image_paths:
+                if png.exists():
+                    shutil.copy2(png, slides_dir / png.name)
+            logger.info("  Kept %d PDF-rendered slide(s)", len(result.slide_image_paths))
+            # Cleanup temp slide PNGs
+            for png in result.slide_image_paths:
+                if png.exists():
+                    png.unlink()
+            try:
+                if result.slide_image_paths:
+                    result.slide_image_paths[0].parent.rmdir()
+                    result.slide_image_paths[0].parent.parent.rmdir()
+            except OSError:
+                pass
         elif sampled_frames:
             if self.config.get("frame_sampling", {}).get("cleanup_non_slides", True):
                 for sf in sampled_frames:
