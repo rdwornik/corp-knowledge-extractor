@@ -92,10 +92,12 @@ output/{package_name}/
 ## Installation
 
 ```bash
-pip install -e ../corp-os-meta       # shared schema + taxonomy
+pip install -e ../corp-os-meta       # shared schema + taxonomy (required)
 pip install -e .                     # install CKE + deps
-echo "GEMINI_API_KEY=your_key" > .env
 ```
+
+API keys are loaded globally from `Documents/.secrets/.env` via PowerShell profile.
+See CLAUDE.md for key management commands.
 
 ## Tests
 

@@ -30,6 +30,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff", "mypy"]
 slides = ["comtypes; sys_platform == 'win32'", "PyMuPDF>=1.20.0"]
+ecosystem = ["corp-os-meta"]
 
 [project.scripts]
 cke = "scripts.run:cli"
